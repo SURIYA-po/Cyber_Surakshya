@@ -16,7 +16,7 @@ This README will grow as I work through each phase. For now, here's what got don
 
 ---
 
-## Phase 1 — Base Server Preparation (COMPLETED)
+## Phase 1 — Base Server Preparation (Completed)
 
 Got the foundation sorted today. Nothing fancy, just making sure the server is clean, locked down, and ready for everything that comes next.
 
@@ -55,10 +55,38 @@ Confirmed the active interface is `ens5` — this will be used in both Zeek and 
 
 ---
 
+## Phase 2 — Docker & Docker Compose Installation (Completed)
+
+Got Docker properly set up today using the official Docker repository — not the outdated `docker.io` package that comes with Ubuntu. Also wired up Docker Compose v2 as a plugin rather than the old standalone binary.
+
+### What I did
+
+**Cleaned up old Docker versions**
+The plan was to remove any old or unofficial Docker packages that might've been sitting around but it was clean.
+
+**Added Docker's official GPG key**
+Installed `ca-certificates` and `gnupg`, then pulled Docker's GPG key and stored it at `/etc/apt/keyrings/docker.gpg`. This lets apt verify that packages actually come from Docker and haven't been messed with.
+
+**Added Docker's official apt repository**
+Pointed apt at `download.docker.com` for the stable channel. Used `VERSION_CODENAME` from `/etc/os-release` so it picks the right repo for our Ubuntu version automatically.
+
+**Installed Docker Engine**
+Installed `docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, and `docker-compose-plugin` all in one go. This gives us Docker Engine plus the v2 Compose plugin.
+
+**Added users to docker group**
+Added both `cybersurakshya` and `ubuntu` to the `docker` group so neither needs `sudo` for every docker command. Group change takes effect on next login.
+
+**Enabled Docker on boot**
+Enabled both `docker.service` and `containerd.service` via systemctl so Docker starts automatically on every reboot — important for a system that needs to always be running.
+
+**Verified everything works**
+Ran `docker run hello-world` and got the success message. Docker Engine and Docker Compose plugin both confirmed working.
+
+---
+
 ## What's Next
 
-- **Phase 2** — Docker and Docker Compose installation
-- **Phase 3** — Zeek network monitor setup
+- **Phase 3** — Zeek network monitor installation and configuration (interface: ens5)
 - **Phase 4** — Suricata IDS/IPS setup
 - **Phase 5** — Project folder structure and Python environment
 - **Phase 6** — Zeek watcher service
