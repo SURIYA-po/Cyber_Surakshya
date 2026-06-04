@@ -84,9 +84,45 @@ Ran `docker run hello-world` and got the success message. Docker Engine and Dock
 
 ---
 
+## Phase 3 — Zeek Network Monitor Installation (Completed)
+
+Got Zeek 8.0.5 installed and capturing live traffic. Ran into a couple of version-specific quirks since Zeek 8 is pretty new and most docs still reference older versions. Also hit a memory wall on the t3.micro which we worked around with swap — will upgrade the instance before the full pipeline test.
+
+### What I did
+
+**Added Zeek repository**
+Zeek isn't in Ubuntu's default repos so added the official OpenSUSE-hosted Zeek apt repository along with its GPG key. Used the Ubuntu 22.04 repo since Zeek hasn't published a 26.04 one yet — works fine.
+
+**Installed Zeek 8.0.5**
+Straightforward apt install. Pulled in some mail-related dependencies we don't need — selected "No configuration" on the Postfix popup and moved on.
+
+**Added Zeek to PATH**
+Created `/etc/profile.d/zeek.sh` to permanently add `/opt/zeek/bin` to the system PATH so `zeek` and `zeekctl` work from anywhere without typing the full path.
+
+**Configured node.cfg**
+Set the network interface to `ens5` (our AWS EC2 interface) and kept it in standalone mode. Removed worker/lb_method lines to keep resource usage minimal on the t3.micro.
+
+**Configured networks.cfg**
+Added `172.31.0.0/16` as the local network range — this is the full AWS EC2 subnet range covering our availability zone.
+
+**Configured zeekctl.cfg**
+Disabled mail settings since we have no mail server. Confirmed log directory is set to `/opt/zeek/logs`.
+
+**Configured JSON logging**
+Zeek 8 handles JSON logging differently from older versions — `LogAscii::use_json` is no longer valid. Used the correct Zeek 8 approach with `LogAscii::json_timestamps` instead.
+
+**Created 2GB swap file**
+Zeek was getting OOM-killed on startup due to the t3.micro's 1GB RAM. Created a 2GB swap file at `/swapfile` and made it permanent via `/etc/fstab`. This gave enough headroom for Zeek to start cleanly.
+
+**Deployed and verified**
+Ran `zeekctl deploy` — Zeek came up with status `running`. Confirmed `/opt/zeek/logs/current/` is populated with `conn.log`, `dns.log` and others. Tailed `dns.log` after a ping to google.com and saw live JSON entries appearing.
+
+**Created systemd service**
+Created `/etc/systemd/system/zeek.service` so Zeek automatically deploys on every reboot via systemctl.
+
+
 ## What's Next
 
-- **Phase 3** — Zeek network monitor installation and configuration (interface: ens5)
 - **Phase 4** — Suricata IDS/IPS setup
 - **Phase 5** — Project folder structure and Python environment
 - **Phase 6** — Zeek watcher service
@@ -101,6 +137,8 @@ Ran `docker run hello-world` and got the success message. Docker Engine and Dock
 
 - t3.micro RAM (1GB) might get tight once Zeek and Suricata are both running. Will monitor and optimize worker configs if needed.
 - Ubuntu 26.04 is a fresh release — keeping an eye out for any package naming differences compared to 22.04 docs.
+- Zeek 8.0.5 has breaking changes from older versions — watch out if referencing any pre-v7 docs
+- t3.micro RAM is tight with swap as a workaround — planning to upgrade to t3.small before Phase 10 full pipeline test
 
 ---
 
