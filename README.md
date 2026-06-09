@@ -120,10 +120,41 @@ Ran `zeekctl deploy` — Zeek came up with status `running`. Confirmed `/opt/zee
 **Created systemd service**
 Created `/etc/systemd/system/zeek.service` so Zeek automatically deploys on every reboot via systemctl.
 
+---
+
+### Phase 4 — Suricata IDS/IPS Installation (Completed)
+Got Suricata 8.0.3 installed and running alongside Zeek. Hit a couple of bumps with the new version and low RAM but worked through both. Both Zeek and Suricata are now running simultaneously on the t3.micro with the 2GB swap handling the memory pressure.
+
+### What I did
+Added OISF official PPA
+Suricata isn't in Ubuntu's default repos so added the official OISF stable PPA. This gives us the latest stable release directly from the Suricata maintainers.
+Installed Suricata 8.0.3
+Clean apt install. Suricata 8 is a very fresh release — --version flag no longer works, use -V instead. Worth noting for anyone referencing older docs.
+Configured suricata.yaml
+Made three key changes to the main config:
+
+Set HOME_NET to 172.31.0.0/16 to match our AWS EC2 subnet
+Changed the af-packet interface from eth0 to ens5
+Enabled eve-log JSON output and set community-id: true so Suricata alerts can be correlated with Zeek conn logs later in the pipeline
+Disabled pcap-log to save disk space on our small instance
+
+Downloaded ET Open ruleset
+Installed suricata-update and pulled the latest Emerging Threats Open ruleset. Loaded 5016 signatures successfully.
+Tested configuration
+Ran suricata -T in test mode before starting the service — all 5016 signatures processed and config validated cleanly.
+Fixed systemd startup timeout
+Suricata 8 takes longer than systemd's default timeout to load rules on a t3.micro. Created /etc/systemd/system/suricata.service.d/timeout.conf and set TimeoutStartSec=300 to give it enough time. After the fix Suricata came up as active (running).
+Verified eve.json output
+Tailed /var/log/suricata/eve.json and confirmed stats entries are being written every few seconds in correct JSON format.
+
+Set up weekly rule updates
+Added a root crontab entry to run suricata-update every Monday at 3am and send SIGUSR2 to Suricata to reload rules without a full restart.
+
+---
 
 ## What's Next
 
-- **Phase 4** — Suricata IDS/IPS setup
+
 - **Phase 5** — Project folder structure and Python environment
 - **Phase 6** — Zeek watcher service
 - **Phase 7** — Response Agent FastAPI service
@@ -139,6 +170,9 @@ Created `/etc/systemd/system/zeek.service` so Zeek automatically deploys on ever
 - Ubuntu 26.04 is a fresh release — keeping an eye out for any package naming differences compared to 22.04 docs.
 - Zeek 8.0.5 has breaking changes from older versions — watch out if referencing any pre-v7 docs
 - t3.micro RAM is tight with swap as a workaround — planning to upgrade to t3.small before Phase 10 full pipeline test
+- Suricata 8.0.3 has some breaking changes from older versions — --version flag removed, watch out for outdated docs
+- Both Zeek and Suricata running simultaneously on t3.micro with 2GB swap — stable for now but will upgrade to t3.small before full pipeline test in Phase 10
+- community-id enabled in both Zeek and Suricata — this is important for correlating events across both tools later
 
 ---
 
