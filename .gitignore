@@ -21,3 +21,10 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+#ignore all files in the .vscode folder
+.vscode/*
+.venv/*
+.pycache/*
+.pytest_cache/*
+.DS_Store
+.env
