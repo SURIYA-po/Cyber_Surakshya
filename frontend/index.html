@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>IDS Inference Demo</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+  </head>
+  <body>
+    <h1>IDS Inference</h1>
+
+    <section>
+      <h2>Single / Batch JSON</h2>
+      <p>Paste a single JSON record or list of records. Fields should match CICIDS2017 feature names (stripped).</p>
+      <textarea id="json-input" rows="8" style="width:100%"></textarea>
+      <button id="predict-json">Predict JSON</button>
+    </section>
+
+    <section>
+      <h2>Upload CSV</h2>
+      <input type="file" id="csv-file" accept=".csv" />
+      <button id="predict-csv">Predict CSV</button>
+    </section>
+
+    <section>
+      <h2>Upload Zeek conn.log</h2>
+      <input type="file" id="zeek-file" />
+      <button id="predict-zeek">Predict Zeek</button>
+    </section>
+
+    <section>
+      <h2>Results</h2>
+      <pre id="results" style="white-space:pre-wrap; background:#f8f8f8; padding:10px; border-radius:6px;"></pre>
+    </section>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
