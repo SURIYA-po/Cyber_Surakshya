@@ -32,5 +32,3 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 - `POST /predict` JSON
 - `POST /predict/csv` (file)
 - `POST /predict/zeek` (Zeek conn.log upload)
-# Final_year_project_prototype
-This is the final year project on cyber security integration AI for automation for detection ,analysis and response agents working parallely for faster threat and vulnerarabitlty detection and quick response 

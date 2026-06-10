@@ -28,3 +28,4 @@ TestResults.xml
 .pytest_cache/*
 .DS_Store
 .env
+data/*
