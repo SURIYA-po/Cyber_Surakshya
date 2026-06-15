@@ -152,10 +152,40 @@ Added a root crontab entry to run suricata-update every Monday at 3am and send S
 
 ---
 
+## Phase 5 — Project Folder Structure Setup (Completed)
+
+Got the full project directory structure in place and the Python environment ready. This phase was mostly groundwork — setting up the scaffolding that Phases 6 and 7 will build on top of.
+
+### What I did
+
+Created project directories
+Created the main project root at /opt/cybersurakshya/ with the following subdirectories:
+
+
+zeek-watcher/ — will hold the log watcher service
+response-agent/ — will hold the FastAPI response service
+logs/ — centralized log storage for our services
+config/ — configuration files including .env
+docker/ — docker-related files for later phases
+
+
+Set correct ownership
+Transferred ownership of all directories to the cybersurakshya user recursively. All services will run as this user rather than root.
+
+Created Python virtual environment
+Ubuntu 26.04 ships Python 3.14 but doesn't include the venv module by default — had to install python3.14-venv separately first. Created the venv at /opt/cybersurakshya/venv/ owned by the cybersurakshya user.
+
+Installed core Python packages
+Installed all packages our services will need into the venv:
+
+PackageVersionPurposefastapi0.136.3Response Agent API frameworkuvicorn0.49.0ASGI server for FastAPIredis8.0.0Redis client for inter-service messagingpsycopg2-binary2.9.12PostgreSQL database driverpython-dotenv1.2.2Loading .env config fileswatchdog6.0.0File system monitoring for Zeek watcherrequests2.34.2HTTP client for forwarding logspydantic2.13.4Data validation for API modelssqlalchemy2.0.50ORM for database interactions
+
+Created .env config file
+Created /opt/cybersurakshya/config/.env with placeholder values for Redis URL, PostgreSQL URL, Response Agent port, and log directory. Set permissions to 600 (owner read/write only) so sensitive values are protected.
+
+
 ## What's Next
 
-
-- **Phase 5** — Project folder structure and Python environment
 - **Phase 6** — Zeek watcher service
 - **Phase 7** — Response Agent FastAPI service
 - **Phase 8** — iptables persistence
@@ -173,6 +203,8 @@ Added a root crontab entry to run suricata-update every Monday at 3am and send S
 - Suricata 8.0.3 has some breaking changes from older versions — --version flag removed, watch out for outdated docs
 - Both Zeek and Suricata running simultaneously on t3.micro with 2GB swap — stable for now but will upgrade to t3.small before full pipeline test in Phase 10
 - community-id enabled in both Zeek and Suricata — this is important for correlating events across both tools later
+- Python 3.14 is the default on Ubuntu 26.04 — venv package needs to be installed separately unlike older Ubuntu versions
+- .env file is locked to cybersurakshya user only — never commit this file to git
 
 ---
 
