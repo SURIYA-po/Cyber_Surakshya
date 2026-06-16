@@ -29,3 +29,4 @@ TestResults.xml
 .DS_Store
 .env
 data/*
+__pycache__/

@@ -27,7 +27,7 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────────────────
 # ARTIFACT PATHS
 # ─────────────────────────────────────────────────────────────────
-ARTIFACT_DIR = "/home/claude/ids_pipeline/artifacts"
+ARTIFACT_DIR = "C:/Users/ACER/Downloads/files/artifacts"
 MODEL_PATH    = os.path.join(ARTIFACT_DIR, "model.pkl")
 SCALER_PATH   = os.path.join(ARTIFACT_DIR, "scaler.pkl")
 LE_PATH       = os.path.join(ARTIFACT_DIR, "label_encoder.pkl")
