@@ -183,6 +183,98 @@ PackageVersionPurposefastapi0.136.3Response Agent API frameworkuvicorn0.49.0ASGI
 Created .env config file
 Created /opt/cybersurakshya/config/.env with placeholder values for Redis URL, PostgreSQL URL, Response Agent port, and log directory. Set permissions to 600 (owner read/write only) so sensitive values are protected.
 
+- - - 
+
+### Phase 6 — Zeek Watcher Service (Completed)
+
+Got the Zeek watcher service running. This is the bridge between Zeek's raw network logs and the AI detection pipeline — it tails conn.log in real time, parses each new flow as JSON, and forwards it to the Detection Agent API. Hit a permissions issue with Zeek 8's log layout that took some digging to fix.
+
+What the Zeek Watcher does
+
+
+Watches /opt/zeek/spool/zeek/conn.log for new lines in real time using the watchdog library
+Parses each new line as JSON and extracts key network flow fields: id.orig_h, id.resp_h, id.orig_p, id.resp_p, proto, duration, orig_bytes, resp_bytes, conn_state, orig_pkts, resp_pkts
+Forwards each flow as a POST request to the Detection Agent API at http://localhost:8001/detect
+
+
+## What I did
+
+Created watcher.py
+Wrote the watcher script at /opt/cybersurakshya/zeek-watcher/watcher.py using the watchdog library's FileSystemEventHandler. The script:
+
+
+Opens conn.log and seeks to the end on startup so it only reads new entries
+On every file modification event, reads new lines and parses them as JSON
+Extracts only the agreed feature fields and POSTs them to the Detection Agent
+Logs all activity to /opt/cybersurakshya/logs/watcher.log
+Handles JSON parse errors and connection failures gracefully without crashing
+
+
+Used sudo tee with a heredoc instead of nano to write the script — EC2 Instance Connect's terminal window is too small for pasting long scripts into nano cleanly.
+
+Fixed Zeek 8 log path
+Zeek 8 stores active logs at /opt/zeek/spool/zeek/ — the /opt/zeek/logs/current/ path is just a symlink pointing there. The watcher script uses the symlink path which resolves correctly.
+
+Fixed permissions
+The cybersurakshya user couldn't read Zeek's log files because they're owned by the zeek group. Fixed by adding cybersurakshya to the zeek group:
+
+sudo usermod -aG zeek cybersurakshya
+
+Created systemd service
+Created /etc/systemd/system/zeek-watcher.service so the watcher starts automatically on boot after the zeek service is up. Service runs as the cybersurakshya user using the project venv.
+
+Verified
+Service shows active (running). Watcher log confirms it started and is tailing conn.log. Forwarding warnings to Detection Agent are expected at this stage — the Detection Agent gets built in Phase 7.
+
+- - - 
+
+### Phase 7 — Response Agent FastAPI Service (Completed)
+
+Got the Response Agent running as a FastAPI service on port 8000. This is the enforcement arm of the pipeline — it receives block/unblock commands and executes them as real iptables rules on the server. Tested all endpoints manually with curl and confirmed iptables rules are being added and removed correctly.
+
+What the Response Agent does
+
+The Response Agent is a FastAPI web service that acts as the action executor for the Cyber Surakshya pipeline. When the Decision Agent determines a threat is real, it sends commands here:
+
+
+POST /response/block-ip — adds an iptables DROP rule for the given IP
+POST /response/unblock-ip — removes the iptables DROP rule
+GET /response/active-blocks — returns list of currently blocked IPs from iptables
+POST /response/add-suricata-rule — appends a rule to local.rules and reloads Suricata
+POST /response/notify — logs notifications and optionally POSTs to a webhook URL
+GET /health — returns service status
+Redis subscriber thread — listens on channel:response_command for automated commands from the Decision Agent
+
+
+## What I did
+
+Created main.py
+Wrote the full FastAPI application at /opt/cybersurakshya/response-agent/main.py. Used sudo tee with heredoc again to avoid nano terminal overflow issues on EC2 Instance Connect.
+
+Key implementation details:
+
+
+Runs as root (required for iptables access)
+Loads config from /opt/cybersurakshya/config/.env via python-dotenv
+All actions logged to /opt/cybersurakshya/logs/response-agent.log
+Redis subscriber runs as a daemon thread on startup — handles Redis being unavailable gracefully without crashing
+Webhook URL is optional — read from .env, skipped if empty
+
+
+Created systemd service
+Created /etc/systemd/system/response-agent.service running uvicorn on 0.0.0.0:8000. Service runs as root for iptables access and auto-restarts on failure.
+
+Tested all critical endpoints
+
+
+/health → {"status":"ok","service":"response-agent"} (done)
+/response/block-ip with 10.0.0.99 → rule appeared in iptables INPUT chain (done)
+/response/unblock-ip with 10.0.0.99 → rule removed from iptables cleanly (done)
+
+--- 
+
+
+
 
 ## What's Next
 
@@ -191,6 +283,69 @@ Created /opt/cybersurakshya/config/.env with placeholder values for Redis URL, P
 - **Phase 8** — iptables persistence
 - **Phase 9** — Log rotation
 - **Phase 10** — Full pipeline test
+
+---
+
+### Phase 8 — iptables Persistence (Completed)
+
+This phase had an unexpected conflict but we worked around it cleanly. The standard iptables-persistent package conflicts with UFW on Ubuntu 26.04 — installing one removes the other. We solved it with a custom save/restore approach that integrates better with our Response Agent anyway.
+
+What happened
+
+iptables-persistent conflict
+Attempted to install iptables-persistent for automatic iptables rule persistence across reboots. The package manager removed UFW as a conflicting dependency. Since UFW is our primary firewall managing SSH and service ports, we immediately reinstalled UFW and restored all rules:
+
+
+Port 22 (SSH)
+Ports 8000–8010 (FastAPI services)
+Port 4317 (OpenTelemetry monitoring)
+
+
+Custom persistence approach
+Instead of fighting the package conflict, built a lightweight custom solution:
+
+restore-blocks.sh — reads /opt/cybersurakshya/config/blocked-ips.txt on boot and re-applies iptables DROP rules for each saved IP. Runs as a oneshot systemd service (restore-blocks.service) that fires after network is up on every boot.
+
+save-block.sh — called when an IP is blocked. Appends the IP to blocked-ips.txt if not already present. Prevents duplicates with a grep check.
+
+remove-block.sh — called when an IP is unblocked. Removes the IP from blocked-ips.txt using sed in-place edit.
+
+Tested persistence
+Blocked test IP 10.0.0.55 via the Response Agent, saved it with save-block.sh, confirmed it appears in blocked-ips.txt. On next reboot restore-blocks.service will re-apply the DROP rule automatically.
+
+## TODO
+
+
+Update response-agent/main.py block/unblock endpoints to call save-block.sh and remove-block.sh automatically — currently requires manual call after blocking
+This will make persistence fully seamless and transparent to the Decision Agent
+
+
+---
+
+### Phase 9 — Log Rotation and Disk Management (Completed)
+
+ Set up log rotation for all three log sources — Zeek, Suricata, and our own services. On a small EBS volume this is critical — without rotation logs will fill the disk within days under active traffic.
+
+## What I did
+
+Zeek log rotation
+Created /etc/logrotate.d/zeek to rotate logs daily, keep 7 days, compress old logs, and run zeekctl rotate after each rotation so Zeek reopens its log files cleanly. Old logs beyond 7 days are automatically removed.
+
+Suricata eve.json rotation
+Created /etc/logrotate.d/suricata to rotate eve.json daily, keep 14 days (longer than Zeek since alerts are more valuable to keep), and send SIGHUP to Suricata after rotation so it reopens the file without a full restart.
+
+Response Agent and Watcher log rotation
+Created /etc/logrotate.d/cybersurakshya to rotate all logs under /opt/cybersurakshya/logs/ daily, keep 7 days, and restart zeek-watcher and response-agent services after rotation so they reopen their log file handles.
+
+Zeek archive cleanup cron job
+Added a root cron job to run at 2am daily:
+
+find /opt/zeek/logs/ -type f -name "*.log*" -mtime +30 -delete
+
+This cleans up Zeek's archived log directory beyond 30 days as a second layer of disk protection.
+
+Tested all configs
+Ran logrotate --debug on all three configs — all validated cleanly. Both response-agent.log and watcher.log were found and considered for rotation. No errors on any config.
 
 ---
 
@@ -205,6 +360,18 @@ Created /opt/cybersurakshya/config/.env with placeholder values for Redis URL, P
 - community-id enabled in both Zeek and Suricata — this is important for correlating events across both tools later
 - Python 3.14 is the default on Ubuntu 26.04 — venv package needs to be installed separately unlike older Ubuntu versions
 - .env file is locked to cybersurakshya user only — never commit this file to git
+- Service runs as root intentionally — iptables requires root privileges. This is acceptable since it's an internal service not exposed to the internet
+- Redis warning on startup is expected — Redis isn't installed yet. The subscriber thread catches the exception and logs a warning without crashing the service
+- Webhook URL is empty in .env for now — can be pointed at a Slack/Teams webhook later for real notifications
+- iptables-persistent and ufw are mutually exclusive on Ubuntu 26.04 — don't try to install both
+- UFW rules are already persistent across reboots by default — only the dynamic iptables rules from our Response Agent needed the custom persistence solution
+- blocked-ips.txt should be backed up periodically — it's the source of truth for all active blocks
+- Logrotate runs automatically via system cron daily — no manual steps needed
+- delaycompress is set on all configs so the most recent rotated log stays uncompressed for easy reading
+- Suricata gets 14 days retention vs 7 for others — alerts are forensic evidence and worth keeping longer
+- The 30-day Zeek archive cleanup is a safety net on top of the 7-day logrotate rotation
+
+
 
 ---
 
