@@ -1,0 +1,44 @@
+Frontend Development Progress Report
+
+Project Title: CyberSurakshya: A Multi-Agent Autonomous AI Framework for Real-Time Integrated Cyber Defense
+
+Team Member: Sandesh Pokhrel
+
+Role: Frontend & Documentation Lead
+
+Date: June 2026
+
+1. Work Summary
+
+This report summarizes the frontend development activities completed for the CyberSurakshya project.
+The objective of this work was to establish the initial frontend architecture and develop the core dashboard interface that will interact with the backend AI agents and cybersecurity monitoring services.
+2. Technologies Used
+React.js (Vite)
+JavaScript (ES6+)
+React Router DOM
+Axios
+Chart.js
+React-Chartjs-2
+Completed Tasks
+3.1 Project Initialization
+Created React application using Vite.
+Configured project directory structure.
+Installed required frontend dependencies.
+
+3.2 Folder Structure Design
+
+Implemented a scalable project structure:
+
+src/
+│
+├── api/
+├── components/
+├── pages/
+├── hooks/
+├── context/
+├── services/
+├── utils/
+└── App.jsx
+
+HTML5
+CSS3
