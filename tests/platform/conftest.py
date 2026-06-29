@@ -10,6 +10,10 @@ from cyber_surakshya.platform.enums.severity import Severity
 from cyber_surakshya.platform.identifiers.correlation import CorrelationContext
 from cyber_surakshya.platform.risk.score import RiskScore
 from cyber_surakshya.platform.schemas.alert import Alert
+from cyber_surakshya.platform.schemas.analysis_result import (
+    AnalysisEvidence,
+    AnalysisResult,
+)
 from cyber_surakshya.platform.schemas.detection_result import DetectionResult
 from cyber_surakshya.platform.schemas.security_event import NetworkEndpoint, SecurityEvent
 
@@ -74,6 +78,31 @@ def sample_detection_result(
         is_anomaly=status == DetectionStatus.DETECTED,
         feature_snapshot=event.features,
         audit=sample_audit(actor="ids"),
+    )
+
+
+def sample_analysis_result(
+    event: SecurityEvent,
+    detection: DetectionResult,
+) -> AnalysisResult:
+    return AnalysisResult(
+        event_id=event.event_id,
+        detection_id=detection.detection_id,
+        correlation_id=event.correlation_id,
+        trace_id=event.trace_id,
+        severity=detection.severity,
+        risk_score=detection.risk_score,
+        summary="DDoS detection requires analyst review.",
+        reasoning="The model identified a high-confidence non-benign flow.",
+        evidence=[
+            AnalysisEvidence(
+                source="detection_result",
+                name="predicted_label",
+                value=detection.predicted_label,
+            )
+        ],
+        confidence=detection.confidence,
+        audit=sample_audit(actor="analysis"),
     )
 
 

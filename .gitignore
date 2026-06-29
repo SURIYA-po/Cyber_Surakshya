@@ -30,3 +30,4 @@ TestResults.xml
 .env
 data/*
 __pycache__/
+__init__.py

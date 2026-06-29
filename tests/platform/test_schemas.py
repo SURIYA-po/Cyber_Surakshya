@@ -7,10 +7,12 @@ from cyber_surakshya.platform.enums.detection_status import DetectionStatus
 from cyber_surakshya.platform.enums.severity import Severity
 from cyber_surakshya.platform.risk.score import RiskScore
 from cyber_surakshya.platform.schemas.alert import Alert
+from cyber_surakshya.platform.schemas.analysis_result import AnalysisResult
 from cyber_surakshya.platform.schemas.detection_result import DetectionResult
 from cyber_surakshya.platform.schemas.security_event import SecurityEvent
 from tests.platform.conftest import (
     sample_alert,
+    sample_analysis_result,
     sample_detection_result,
     sample_security_event,
 )
@@ -61,6 +63,38 @@ def test_detection_result_rejects_detected_with_benign_label():
             **{
                 **sample_detection_result(event).model_dump(),
                 "predicted_label": "BENIGN",
+            }
+        )
+
+
+def test_analysis_result_validates_successfully():
+    event = sample_security_event()
+    detection = sample_detection_result(event)
+    analysis = sample_analysis_result(event, detection)
+    assert analysis.event_id == event.event_id
+    assert analysis.detection_id == detection.detection_id
+
+
+def test_analysis_result_rejects_invalid_confidence():
+    event = sample_security_event()
+    detection = sample_detection_result(event)
+    with pytest.raises(ValueError):
+        AnalysisResult(
+            **{
+                **sample_analysis_result(event, detection).model_dump(),
+                "confidence": 1.5,
+            }
+        )
+
+
+def test_analysis_result_rejects_invalid_id():
+    event = sample_security_event()
+    detection = sample_detection_result(event)
+    with pytest.raises(ValueError):
+        AnalysisResult(
+            **{
+                **sample_analysis_result(event, detection).model_dump(),
+                "detection_id": "not-a-uuid",
             }
         )
 

@@ -17,12 +17,17 @@ from cyber_surakshya.platform.enums import (
 )
 from cyber_surakshya.platform.identifiers.correlation import (
     CorrelationContext,
+    generate_analysis_id,
     generate_correlation_id,
     generate_event_id,
     generate_trace_id,
 )
 from cyber_surakshya.platform.risk.score import RiskScore, severity_from_risk_score
 from cyber_surakshya.platform.schemas.alert import Alert
+from cyber_surakshya.platform.schemas.analysis_result import (
+    AnalysisEvidence,
+    AnalysisResult,
+)
 from cyber_surakshya.platform.schemas.detection_result import DetectionResult
 from cyber_surakshya.platform.schemas.security_event import SecurityEvent
 from cyber_surakshya.platform.state import (
@@ -33,6 +38,8 @@ from cyber_surakshya.platform.state import (
 
 __all__ = [
     "Alert",
+    "AnalysisEvidence",
+    "AnalysisResult",
     "AlertStatus",
     "AuditMetadata",
     "CorrelationContext",
@@ -48,6 +55,7 @@ __all__ = [
     "Severity",
     "create_initial_state",
     "generate_correlation_id",
+    "generate_analysis_id",
     "generate_event_id",
     "generate_trace_id",
     "severity_from_risk_score",

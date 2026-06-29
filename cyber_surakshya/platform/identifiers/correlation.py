@@ -77,6 +77,11 @@ def generate_detection_id() -> str:
     return str(uuid.uuid4())
 
 
+def generate_analysis_id() -> str:
+    """Generate a new analysis result ID (UUID v4)."""
+    return str(uuid.uuid4())
+
+
 def generate_alert_id() -> str:
     """Generate a new alert ID (UUID v4)."""
     return str(uuid.uuid4())

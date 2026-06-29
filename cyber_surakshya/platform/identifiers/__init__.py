@@ -3,6 +3,7 @@
 from cyber_surakshya.platform.identifiers.correlation import (
     CorrelationContext,
     generate_alert_id,
+    generate_analysis_id,
     generate_correlation_id,
     generate_detection_id,
     generate_event_id,
@@ -14,6 +15,7 @@ from cyber_surakshya.platform.identifiers.correlation import (
 __all__ = [
     "CorrelationContext",
     "generate_alert_id",
+    "generate_analysis_id",
     "generate_correlation_id",
     "generate_detection_id",
     "generate_event_id",
