@@ -27,7 +27,8 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────────────────
 # ARTIFACT PATHS
 # ─────────────────────────────────────────────────────────────────
-ARTIFACT_DIR = "C:/Users/ACER/Downloads/files/artifacts"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ARTIFACT_DIR = os.environ.get("ARTIFACT_DIR", os.path.join(BASE_DIR, "artifacts"))
 MODEL_PATH    = os.path.join(ARTIFACT_DIR, "model.pkl")
 SCALER_PATH   = os.path.join(ARTIFACT_DIR, "scaler.pkl")
 LE_PATH       = os.path.join(ARTIFACT_DIR, "label_encoder.pkl")

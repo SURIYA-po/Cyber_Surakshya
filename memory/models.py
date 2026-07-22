@@ -101,6 +101,7 @@ class MemoryQuery(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    query_text: str | None = Field(default=None, description="Semantic text query for vector search")
     record_ids: list[str] | None = None
     record_types: list[str] | None = None
     entity_ids: list[str] | None = None

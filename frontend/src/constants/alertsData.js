@@ -1,0 +1,42 @@
+export const alertsData = [
+  {
+    id: "ALT-1001",
+    attackType: "SQL Injection",
+    severity: "Critical",
+    sourceIp: "192.168.1.10",
+    status: "Open",
+    time: "2 min ago",
+  },
+  {
+    id: "ALT-1002",
+    attackType: "Brute Force",
+    severity: "High",
+    sourceIp: "172.16.5.23",
+    status: "Investigating",
+    time: "5 min ago",
+  },
+  {
+    id: "ALT-1003",
+    attackType: "Cross Site Scripting",
+    severity: "Medium",
+    sourceIp: "10.10.0.8",
+    status: "Monitoring",
+    time: "12 min ago",
+  },
+  {
+    id: "ALT-1004",
+    attackType: "Malware",
+    severity: "Low",
+    sourceIp: "192.168.10.50",
+    status: "Resolved",
+    time: "20 min ago",
+  },
+  {
+    id: "ALT-1005",
+    attackType: "DDoS",
+    severity: "Critical",
+    sourceIp: "45.12.100.25",
+    status: "Open",
+    time: "25 min ago",
+  },
+];

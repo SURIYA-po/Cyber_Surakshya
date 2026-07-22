@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: cyber-surakshya
+    env: python
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: CYBER_SURAKSHYA_CORS_ORIGINS
+        value: "*"
+      - key: CYBER_SURAKSHYA_API_KEY
+        sync: false

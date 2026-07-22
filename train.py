@@ -48,8 +48,9 @@ from preprocess import run_preprocessing
 # ─────────────────────────────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────────────────────────────
-ARTIFACT_DIR = "/home/claude/ids_pipeline/artifacts"
-PLOT_DIR = "/home/claude/ids_pipeline/plots"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ARTIFACT_DIR = os.environ.get("ARTIFACT_DIR", os.path.join(BASE_DIR, "artifacts"))
+PLOT_DIR = os.environ.get("PLOT_DIR", os.path.join(BASE_DIR, "plots"))
 RANDOM_STATE = 42
 TOP_K_FEATURES = 40
 BALANCE_STRATEGY = "hybrid"

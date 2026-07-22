@@ -5,3 +5,7 @@ pandas>=1.4.0
 scikit-learn>=1.0.0
 numpy>=1.22.0
 joblib>=1.1.0
+pydantic>=2.0.0
+langgraph>=0.0.26
+langchain-core>=0.1.30
+matplotlib>=3.5.0
