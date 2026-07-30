@@ -10,11 +10,13 @@ import pandas as pd
 import random
 import uuid
 import time
+import asyncio
 from datetime import datetime
 from typing import List, Dict, Any
 
-# Reuse existing inference utilities
-from inference import load_artifacts, predict, predict_csv, predict_zeek_log
+# Reuse existing inference utilities & artifacts container
+import inference
+from inference import IDSArtifacts, load_artifacts, predict, predict_csv, predict_zeek_log, resolve_model_path
 
 # LangGraph and Agent imports
 from graph.builder import GraphBuilder
@@ -36,42 +38,12 @@ from adapters.detection.ids_adapter import IDSDetectionAdapter
 from agents.detection.detection_agent import DetectionAgent
 from ai_engine.deterministic import DeterministicRuleEngine
 from agents.analysis.analysis_agent import AnalysisAgent
+from agents.decision.decision_agent import DecisionAgent
+from agents.decision.deterministic import DeterministicDecisionEngine
 
-class HybridDetectionAdapter(IDSDetectionAdapter):
-    def detect(self, flow_data: dict):
-        if "_SIMULATED_ATTACK_NAME" in flow_data:
-            attack_name = flow_data.pop("_SIMULATED_ATTACK_NAME")
-            
-            if "DDoS" in attack_name: pred = "DDOS"
-            elif "BruteForce" in attack_name: pred = "BRUTEFORCE"
-            elif "PortScan" in attack_name: pred = "PORTSCAN"
-            else: pred = attack_name.upper()
-            
-            conf = 0.98
-            status = DetectionStatus.DETECTED
-            risk_score = self._risk_score_for(status, conf)
-            
-            return DetectionResult(
-                event_id=generate_event_id(),
-                correlation_id=generate_correlation_id(),
-                trace_id=generate_trace_id(),
-                status=status,
-                severity=severity_from_risk_score(risk_score.value),
-                risk_score=risk_score,
-                model_name="SimulatedIDS",
-                model_version="1.0",
-                predicted_label=pred,
-                confidence=conf,
-                probabilities={pred: conf, "BENIGN": 1-conf},
-                is_anomaly=True,
-                benign_label="BENIGN",
-                feature_snapshot=self._numeric_feature_snapshot(flow_data),
-                metadata={"adapter": "hybrid_sim"},
-                audit=AuditMetadata(created_by="sim", updated_by="sim", source_system="sim")
-            )
-        return super().detect(flow_data)
-
-ARTIFACT_DIR = os.environ.get("ARTIFACT_DIR", "./artifacts")
+ARTIFACT_DIR = os.path.abspath(
+    os.environ.get("ARTIFACT_DIR", os.path.join(os.path.dirname(__file__), "artifacts"))
+)
 
 app = FastAPI(title="IDS Inference API")
 
@@ -103,39 +75,67 @@ MOCK_ALERTS = []
 MOCK_ANALYSES = []
 MOCK_BLOCKED_IPS = []
 
+ARTIFACTS = None
+MODEL = None
+SCALER = None
+LE = None
+FEATURE_COLS = None
+
 RUNTIME = None
 PRODUCTION_RUNTIME = None
 
+def ensure_runtime():
+    """Ensure LangGraph runtime & ML adapters are created, registered, and injected."""
+    global ARTIFACTS, MODEL, SCALER, LE, FEATURE_COLS, RUNTIME, PRODUCTION_RUNTIME
+    if RUNTIME is None:
+        try:
+            model_path = resolve_model_path(ARTIFACT_DIR)
+            scaler_path = os.path.join(ARTIFACT_DIR, "scaler.pkl")
+            le_path = os.path.join(ARTIFACT_DIR, "label_encoder.pkl")
+            feat_path = os.path.join(ARTIFACT_DIR, "feature_columns.json")
+            iforest_path = os.path.join(ARTIFACT_DIR, "iforest.pkl")
+            ae_path = os.path.join(ARTIFACT_DIR, "autoencoder.pkl")
+            thresholds_path = os.path.join(ARTIFACT_DIR, "anomaly_thresholds.json")
+
+            print(f"[INFO] Using model artifact: {model_path}")
+
+            ARTIFACTS = IDSArtifacts(
+                model_path=model_path,
+                scaler_path=scaler_path,
+                le_path=le_path,
+                feat_path=feat_path,
+                iforest_path=iforest_path,
+                ae_path=ae_path,
+                thresholds_path=thresholds_path,
+            )
+            MODEL = ARTIFACTS.model
+            SCALER = ARTIFACTS.scaler
+            LE = ARTIFACTS.le
+            FEATURE_COLS = ARTIFACTS.feature_cols
+            
+            # Real ML Adapter (using trained models or fallback container)
+            adapter = IDSDetectionAdapter(artifacts=ARTIFACTS)
+            
+            # Initialize LangGraph Pipeline (Detection -> Analysis -> Decision)
+            builder = GraphBuilder()
+            builder.register_node("detection", DetectionAgent(adapter))
+            builder.register_node("analysis", AnalysisAgent(DeterministicRuleEngine()))
+            builder.register_node("decision", DecisionAgent(DeterministicDecisionEngine()))
+            
+            RUNTIME = GraphRuntime(builder=builder)
+            PRODUCTION_RUNTIME = RUNTIME
+            print("[INFO] Model artifacts & LangGraph ML runtime created and registered successfully.")
+        except Exception as e:
+            print(f"[ERROR] Could not initialize GraphRuntime: {e}")
+    return RUNTIME
+
+# Initialize runtime immediately upon module load
+ensure_runtime()
+
 @app.on_event("startup")
 def startup_load():
-    global MODEL, SCALER, LE, FEATURE_COLS, RUNTIME, PRODUCTION_RUNTIME
-    try:
-        MODEL, SCALER, LE, FEATURE_COLS = load_artifacts(
-            os.path.join(ARTIFACT_DIR, "model.pkl"),
-            os.path.join(ARTIFACT_DIR, "scaler.pkl"),
-            os.path.join(ARTIFACT_DIR, "label_encoder.pkl"),
-            os.path.join(ARTIFACT_DIR, "feature_columns.json"),
-        )
-        
-        # Initialize LangGraph for Simulations (Hybrid)
-        builder = GraphBuilder()
-        builder.register_node("detection", DetectionAgent(HybridDetectionAdapter()))
-        builder.register_node("analysis", AnalysisAgent(DeterministicRuleEngine()))
-        RUNTIME = GraphRuntime(builder=builder)
-        
-        # Initialize LangGraph for Production Data (Real ML Pipeline)
-        builder_prod = GraphBuilder()
-        builder_prod.register_node("detection", DetectionAgent(IDSDetectionAdapter()))
-        builder_prod.register_node("analysis", AnalysisAgent(DeterministicRuleEngine()))
-        PRODUCTION_RUNTIME = GraphRuntime(builder=builder_prod)
-        
-        print("[INFO] Model and LangGraph runtimes loaded successfully.")
-    except Exception as e:
-        MODEL, SCALER, LE, FEATURE_COLS = None, None, None, None
-        print(f"[WARN] Could not load artifacts at startup: {e}")
+    ensure_runtime()
 
-
-import asyncio
 
 @app.get("/feed")
 async def get_feed():
@@ -163,7 +163,8 @@ async def get_feed():
                 tasks = [
                     "Analyzing incoming flow...",
                     "Extracting packet headers...",
-                    "Applying Random Forest model...",
+                    "Applying VotingEnsemble / Random Forest model...",
+                    "Evaluating anomaly layer (Isolation Forest + Autoencoder)...",
                     "Cross-referencing IOCs...",
                     "Updating behavioral baseline...",
                     "Executing LangGraph nodes..."
@@ -199,13 +200,14 @@ async def get_feed():
 # Health is public
 @app.get("/health")
 def health():
-    ok = MODEL is not None and SCALER is not None and LE is not None and FEATURE_COLS is not None
+    ok = RUNTIME is not None
     return {"status": "ok" if ok else "unavailable", "artifacts_loaded": ok}
 
 
 @api_router.post("/predict")
 async def predict_json(payload: Dict[str, Any]):
-    if MODEL is None:
+    ensure_runtime()
+    if ARTIFACTS is None and MODEL is None:
         raise HTTPException(status_code=503, detail="Model artifacts not loaded")
     if isinstance(payload, dict) and "records" in payload:
         records = payload["records"]
@@ -217,28 +219,32 @@ async def predict_json(payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail="Invalid payload format for prediction")
 
     df = pd.DataFrame.from_records(records)
-    results = predict(df, MODEL, SCALER, LE, FEATURE_COLS, return_proba=True)
+    arts = ARTIFACTS or (MODEL, SCALER, LE, FEATURE_COLS)
+    results = predict(df, arts, return_proba=True)
     out = results.reset_index(drop=True).to_dict(orient="records")
     return JSONResponse(content={"predictions": out})
 
 
 @api_router.post("/predict/csv")
 async def predict_csv_upload(file: UploadFile = File(...)):
-    if MODEL is None:
+    ensure_runtime()
+    if ARTIFACTS is None and MODEL is None:
         raise HTTPException(status_code=503, detail="Model artifacts not loaded")
     try:
         contents = await file.read()
         df = pd.read_csv(io.BytesIO(contents))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {e}")
-    results = predict(df, MODEL, SCALER, LE, FEATURE_COLS, return_proba=True)
+    arts = ARTIFACTS or (MODEL, SCALER, LE, FEATURE_COLS)
+    results = predict(df, arts, return_proba=True)
     out_df = pd.concat([df.reset_index(drop=True), results.reset_index(drop=True)], axis=1)
     return JSONResponse(content={"predictions": out_df.to_dict(orient="records")})
 
 
 @api_router.post("/predict/zeek")
 async def predict_zeek(file: UploadFile = File(...)):
-    if MODEL is None:
+    ensure_runtime()
+    if ARTIFACTS is None and MODEL is None:
         raise HTTPException(status_code=503, detail="Model artifacts not loaded")
     try:
         contents = (await file.read()).decode("utf-8")
@@ -246,14 +252,15 @@ async def predict_zeek(file: UploadFile = File(...)):
         with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".log") as tmp:
             tmp.write(contents)
             tmp.flush()
-            res = predict_zeek_log(tmp.name, MODEL, SCALER, LE, FEATURE_COLS)
+            arts = ARTIFACTS or (MODEL, SCALER, LE, FEATURE_COLS)
+            res = predict_zeek_log(tmp.name, output_path=None, artifacts=arts)
         return JSONResponse(content={"predictions": res.reset_index(drop=True).to_dict(orient="records")})
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Zeek prediction failed: {e}")
 
 
 # ---------------------------------------------------------
-# NEW FRONTEND API MOCKS
+# FRONTEND DASHBOARD APIS
 # ---------------------------------------------------------
 
 @api_router.get("/alerts")
@@ -269,12 +276,11 @@ def get_alert_by_id(alert_id: str):
 
 @api_router.get("/alerts/{alert_id}/detail")
 def get_alert_detail(alert_id: str):
-    # Just return the alert plus an analysis stub
     for a in MOCK_ALERTS:
         if str(a["id"]) == alert_id:
             return JSONResponse(content={
                 **a,
-                "analysis_summary": "Auto-analyzed by deterministic engine.",
+                "analysis_summary": "Auto-analyzed by deterministic rule engine & dual-layer IDS.",
                 "confidence_score": 95
             })
     raise HTTPException(status_code=404, detail="Alert not found")
@@ -300,7 +306,6 @@ def get_agents_status():
 
 @api_router.get("/stats")
 def get_stats():
-    # Compute stats dynamically from MOCK_ALERTS
     critical_cnt = len([a for a in MOCK_ALERTS if a.get("severity") == "CRITICAL"])
     high_cnt = len([a for a in MOCK_ALERTS if a.get("severity") == "HIGH"])
     return JSONResponse(content={
@@ -312,7 +317,7 @@ def get_stats():
         "severity_breakdown": {
             "CRITICAL": critical_cnt,
             "HIGH": high_cnt,
-            "MEDIUM": len(MOCK_ALERTS) - critical_cnt - high_cnt
+            "MEDIUM": max(0, len(MOCK_ALERTS) - critical_cnt - high_cnt)
         }
     })
 
@@ -339,60 +344,119 @@ def delete_blocked_ip(ip_id: str):
 
 
 # ---------------------------------------------------------
-# SIMULATION WITH LANGGRAPH RUNTIME
+# REAL ML SIMULATION WITH LANGGRAPH RUNTIME
 # ---------------------------------------------------------
 
+# Realistic 52-feature flow profiles based on CICIDS2017 dataset
 ATTACK_PROFILES = {
     "SYN_Flood_DDoS": {
         "Destination Port": 80, "Flow Duration": 50,
-        "Total Fwd Packets": 1000, "Total Backward Packets": 0,
-        "Total Length of Fwd Packets": 64000, "Total Length of Bwd Packets": 0,
-        "Flow Bytes/s": 1280000, "Flow Packets/s": 20000, "SYN Flag Count": 1000,
-        "FIN Flag Count": 0, "ACK Flag Count": 0, "RST Flag Count": 0,
+        "Total Fwd Packets": 5000, "Total Length of Fwd Packets": 320000,
+        "Fwd Packet Length Max": 64, "Fwd Packet Length Min": 64,
+        "Fwd Packet Length Mean": 64, "Fwd Packet Length Std": 0,
+        "Bwd Packet Length Max": 0, "Bwd Packet Length Min": 0,
+        "Bwd Packet Length Mean": 0, "Bwd Packet Length Std": 0,
+        "Flow Bytes/s": 6400000, "Flow Packets/s": 100000,
+        "Flow IAT Mean": 0.01, "Flow IAT Std": 0.005,
+        "Flow IAT Max": 0.02, "Flow IAT Min": 0.001,
+        "Fwd IAT Total": 50, "Fwd IAT Mean": 0.01,
+        "Fwd IAT Std": 0.005, "Fwd IAT Max": 0.02,
+        "Fwd IAT Min": 0.001, "Bwd IAT Total": 0,
+        "Bwd IAT Mean": 0, "Bwd IAT Std": 0,
+        "Bwd IAT Max": 0, "Bwd IAT Min": 0,
+        "Fwd Header Length": 320000, "Bwd Header Length": 0,
+        "Fwd Packets/s": 100000, "Bwd Packets/s": 0,
+        "Min Packet Length": 64, "Max Packet Length": 64,
+        "Packet Length Mean": 64, "Packet Length Std": 0,
+        "Packet Length Variance": 0, "FIN Flag Count": 0,
+        "SYN Flag Count": 5000, "RST Flag Count": 0,
+        "PSH Flag Count": 0, "ACK Flag Count": 0,
+        "URG Flag Count": 0, "Average Packet Size": 64,
+        "Subflow Fwd Bytes": 320000, "Init_Win_bytes_forward": 65535,
+        "Init_Win_bytes_backward": 0, "act_data_pkt_fwd": 0,
+        "min_seg_size_forward": 64, "Active Mean": 0.01,
+        "Active Max": 0.02, "Active Min": 0.001,
+        "Idle Mean": 0, "Idle Max": 0, "Idle Min": 0,
     },
     "SSH_BruteForce": {
         "Destination Port": 22, "Flow Duration": 30000000,
-        "Total Fwd Packets": 500, "Total Backward Packets": 500,
-        "Total Length of Fwd Packets": 32000, "Total Length of Bwd Packets": 32000,
-        "Flow Bytes/s": 2133, "Flow Packets/s": 33, "SYN Flag Count": 500,
-        "FIN Flag Count": 500, "ACK Flag Count": 1000, "RST Flag Count": 50,
+        "Total Fwd Packets": 1000, "Total Length of Fwd Packets": 64000,
+        "Fwd Packet Length Max": 128, "Fwd Packet Length Min": 40,
+        "Fwd Packet Length Mean": 64, "Fwd Packet Length Std": 12,
+        "Bwd Packet Length Max": 128, "Bwd Packet Length Min": 40,
+        "Bwd Packet Length Mean": 64, "Bwd Packet Length Std": 12,
+        "Flow Bytes/s": 2133, "Flow Packets/s": 33,
+        "SYN Flag Count": 1000, "FIN Flag Count": 1000,
+        "ACK Flag Count": 2000, "RST Flag Count": 100,
+        "Average Packet Size": 64, "Init_Win_bytes_forward": 14600,
+        "Init_Win_bytes_backward": 14600,
     },
     "PortScan": {
         "Destination Port": 0, "Flow Duration": 100,
-        "Total Fwd Packets": 1, "Total Backward Packets": 0,
-        "Total Length of Fwd Packets": 40, "Total Length of Bwd Packets": 0,
-        "Flow Bytes/s": 400000, "Flow Packets/s": 10000, "SYN Flag Count": 1,
-        "FIN Flag Count": 0, "ACK Flag Count": 0, "RST Flag Count": 0,
+        "Total Fwd Packets": 1, "Total Length of Fwd Packets": 40,
+        "Fwd Packet Length Max": 40, "Fwd Packet Length Min": 40,
+        "Fwd Packet Length Mean": 40, "Fwd Packet Length Std": 0,
+        "Flow Bytes/s": 400000, "Flow Packets/s": 10000,
+        "SYN Flag Count": 1, "FIN Flag Count": 0,
+        "ACK Flag Count": 0, "PSH Flag Count": 0,
+        "Average Packet Size": 40, "Init_Win_bytes_forward": 1024,
+    },
+    "DoS_Hulk": {
+        "Destination Port": 80, "Flow Duration": 100000,
+        "Total Fwd Packets": 500, "Total Length of Fwd Packets": 750000,
+        "Fwd Packet Length Max": 1500, "Fwd Packet Length Min": 64,
+        "Fwd Packet Length Mean": 1500, "Fwd Packet Length Std": 100,
+        "Flow Bytes/s": 7500000, "Flow Packets/s": 5000,
+        "SYN Flag Count": 0, "FIN Flag Count": 0,
+        "ACK Flag Count": 500, "PSH Flag Count": 500,
+        "Average Packet Size": 1500, "Init_Win_bytes_forward": 65535,
+    },
+    "Botnet_C2": {
+        "Destination Port": 6667, "Flow Duration": 3600000000,
+        "Total Fwd Packets": 10, "Total Length of Fwd Packets": 640,
+        "Flow Bytes/s": 10, "Flow Packets/s": 0.003,
+        "SYN Flag Count": 1, "FIN Flag Count": 0,
+        "ACK Flag Count": 10, "PSH Flag Count": 8,
+        "Average Packet Size": 64, "Init_Win_bytes_forward": 8192,
+    },
+    "Normal_HTTP_GET": {
+        "Destination Port": 80, "Flow Duration": 500000,
+        "Total Fwd Packets": 5, "Total Length of Fwd Packets": 2000,
+        "Flow Bytes/s": 20000, "Flow Packets/s": 18,
+        "SYN Flag Count": 1, "FIN Flag Count": 1,
+        "ACK Flag Count": 8, "PSH Flag Count": 2,
+        "Average Packet Size": 400, "Init_Win_bytes_forward": 65535,
     }
 }
 
 @api_router.post("/simulation/simulate-attack")
 def simulate_attack():
-    if RUNTIME is None:
+    runtime = ensure_runtime()
+    if runtime is None:
         raise HTTPException(status_code=503, detail="LangGraph runtime not initialized")
     
-    # 1. Select random attack profile
+    # 1. Select random flow profile
     attack_name, features = random.choice(list(ATTACK_PROFILES.items()))
     features_copy = dict(features)
-    features_copy["_SIMULATED_ATTACK_NAME"] = attack_name
     src_ip = f"{random.randint(10, 192)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}"
     
-    # 2. Build SecurityEvent
+    # 2. Build SecurityEvent with real numeric flow features
     ctx = CorrelationContext.create()
     event = SecurityEvent(
         correlation_id=ctx.correlation_id,
         trace_id=ctx.trace_id,
         event_type=EventType.NETWORK_FLOW,
         source=EventSource.IDS,
-        severity=Severity.INFO,  # pre-detection severity
+        severity=Severity.INFO,
         risk_score=RiskScore(value=0.0),
-        title=f"Synthetic flow for {attack_name}",
+        title=f"Network flow simulation: {attack_name}",
         network=NetworkEndpoint(
             source_ip=src_ip,
             destination_ip="192.168.1.100",
-            destination_port=int(features["Destination Port"])
+            destination_port=int(features_copy.get("Destination Port", 80))
         ),
         raw_payload=features_copy,
+        features={k: float(v) for k, v in features_copy.items() if isinstance(v, (int, float))},
         audit=AuditMetadata(
             created_by="simulator",
             updated_by="simulator",
@@ -400,16 +464,15 @@ def simulate_attack():
         )
     )
     
-    # 3. Create initial state and run Graph
+    # 3. Create initial state and run real ML Pipeline via LangGraph
     state = create_initial_state(context=ctx)
     state.security_events.append(event)
     
-    output_state = RUNTIME.execute(state)
+    output_state = runtime.execute(state)
     
-    
-    # 4. Extract results
+    # 4. Extract real ML detection & analysis results
     if not output_state.detection_results:
-        raise HTTPException(status_code=500, detail="No detection result generated")
+        raise HTTPException(status_code=500, detail="No detection result generated by ML pipeline")
     
     det = output_state.detection_results[0]
     analysis = output_state.analysis_results[0] if output_state.analysis_results else None
@@ -434,7 +497,7 @@ def simulate_attack():
             "id": str(analysis.analysis_id),
             "alert_id": alert_id,
             "prediction": det.predicted_label,
-            "confidence": det.confidence * 100,
+            "confidence": round(det.confidence * 100, 2),
             "summary": analysis.summary
         }
         MOCK_ANALYSES.append(new_analysis)
@@ -446,7 +509,7 @@ def simulate_attack():
         blocked_obj = {
             "id": blocked_id,
             "ip": src_ip,
-            "reason": f"Detected {det.predicted_label}",
+            "reason": f"Detected {det.predicted_label} (Confidence: {round(det.confidence * 100, 1)}%)",
             "created_at": datetime.utcnow().isoformat() + "Z"
         }
         MOCK_BLOCKED_IPS.append(blocked_obj)
@@ -455,7 +518,7 @@ def simulate_attack():
         "alert": new_alert,
         "analysis": {
             "prediction": det.predicted_label,
-            "confidence": det.confidence * 100
+            "confidence": round(det.confidence * 100, 2)
         },
         "threat_score": {
             "score": det.risk_score.value,
@@ -471,13 +534,13 @@ def simulate_attack():
 
 @api_router.post("/simulation/upload-zeek")
 async def upload_zeek_simulation(file: UploadFile = File(...)):
-    if PRODUCTION_RUNTIME is None:
+    runtime = ensure_runtime()
+    if runtime is None:
         raise HTTPException(status_code=503, detail="LangGraph production runtime not initialized")
     
     try:
         contents = (await file.read()).decode("utf-8")
         import tempfile
-        import pandas as pd
         from io import StringIO
         from inference import translate_zeek_conn_log
         
@@ -541,7 +604,7 @@ async def upload_zeek_simulation(file: UploadFile = File(...)):
             state = create_initial_state(context=ctx)
             state.security_events.append(event)
             # Run through PRODUCTION adapter directly (real ML model)
-            output_state = PRODUCTION_RUNTIME.execute(state)
+            output_state = runtime.execute(state)
             
             if output_state.detection_results:
                 det = output_state.detection_results[0]
@@ -566,7 +629,7 @@ async def upload_zeek_simulation(file: UploadFile = File(...)):
                             "id": str(analysis.analysis_id),
                             "alert_id": alert_id,
                             "prediction": det.predicted_label,
-                            "confidence": det.confidence * 100,
+                            "confidence": round(det.confidence * 100, 2),
                             "summary": analysis.summary
                         }
                         MOCK_ANALYSES.append(new_analysis)

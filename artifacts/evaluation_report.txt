@@ -1,0 +1,132 @@
+======================================================================
+   CICIDS2017 IDS -- EVALUATION REPORT
+   Research: Real-Time AI-Based IDS (CICIDS2017 + Zeek/CICFlowMeter)
+======================================================================
+
+Classes         : BENIGN, BOTNET, BRUTEFORCE, DDOS, DOS, PORTSCAN, WEBATTACK
+Selected features: 42
+Best model       : DNN
+
+----------------------------------------------------------------------
+METRICS SUMMARY
+----------------------------------------------------------------------
+  Model                     Accuracy    F1(wt)    Recall   Precision   ROC-AUC
+  --------------------------------------------------------------------
+  RandomForest                0.9942    0.9924    0.9942      0.9944    0.9975
+  GradientBoosting            0.9943    0.9925    0.9943      0.9944       1.0
+  DNN                         0.9971    0.9970    0.9971      0.9971       1.0
+  VotingEnsemble              0.9943    0.9926    0.9943      0.9943       1.0
+
+----------------------------------------------------------------------
+DETAILED CLASSIFICATION REPORTS
+----------------------------------------------------------------------
+
+=================================== RandomForest
+              precision    recall  f1-score   support
+
+      BENIGN       0.98      1.00      0.99     24000
+      BOTNET       1.00      0.61      0.76       390
+  BRUTEFORCE       1.00      1.00      1.00      1633
+        DDOS       1.00      1.00      1.00     22854
+         DOS       1.00      1.00      1.00     34590
+    PORTSCAN       1.00      1.00      1.00     16192
+   WEBATTACK       1.00      0.08      0.14       429
+
+    accuracy                           0.99    100088
+   macro avg       1.00      0.81      0.84    100088
+weighted avg       0.99      0.99      0.99    100088
+
+
+=================================== GradientBoosting
+              precision    recall  f1-score   support
+
+      BENIGN       0.98      1.00      0.99     24000
+      BOTNET       1.00      0.61      0.76       390
+  BRUTEFORCE       0.98      1.00      0.99      1633
+        DDOS       1.00      1.00      1.00     22854
+         DOS       1.00      1.00      1.00     34590
+    PORTSCAN       1.00      1.00      1.00     16192
+   WEBATTACK       1.00      0.10      0.17       429
+
+    accuracy                           0.99    100088
+   macro avg       0.99      0.82      0.84    100088
+weighted avg       0.99      0.99      0.99    100088
+
+
+=================================== DNN
+              precision    recall  f1-score   support
+
+      BENIGN       0.99      1.00      0.99     24000
+      BOTNET       0.98      0.74      0.84       390
+  BRUTEFORCE       0.99      0.99      0.99      1633
+        DDOS       1.00      1.00      1.00     22854
+         DOS       1.00      1.00      1.00     34590
+    PORTSCAN       1.00      1.00      1.00     16192
+   WEBATTACK       0.92      0.95      0.94       429
+
+    accuracy                           1.00    100088
+   macro avg       0.98      0.95      0.97    100088
+weighted avg       1.00      1.00      1.00    100088
+
+
+=================================== VotingEnsemble
+              precision    recall  f1-score   support
+
+      BENIGN       0.98      1.00      0.99     24000
+      BOTNET       1.00      0.61      0.76       390
+  BRUTEFORCE       0.99      1.00      1.00      1633
+        DDOS       1.00      1.00      1.00     22854
+         DOS       1.00      1.00      1.00     34590
+    PORTSCAN       1.00      1.00      1.00     16192
+   WEBATTACK       0.98      0.10      0.18       429
+
+    accuracy                           0.99    100088
+   macro avg       0.99      0.82      0.85    100088
+weighted avg       0.99      0.99      0.99    100088
+
+
+----------------------------------------------------------------------
+SELECTED FEATURES
+----------------------------------------------------------------------
+   1. Fwd IAT Max
+   2. Flow IAT Max
+   3. Average Packet Size
+   4. Packet Length Mean
+   5. Bwd Packet Length Mean
+   6. Fwd IAT Total
+   7. Packet Length Std
+   8. Flow Duration
+   9. Fwd IAT Std
+  10. Flow IAT Std
+  11. Bwd Packet Length Max
+  12. Max Packet Length
+  13. Idle Mean
+  14. Idle Min
+  15. Idle Max
+  16. Packet Length Variance
+  17. Bwd Packet Length Std
+  18. Fwd IAT Mean
+  19. Init_Win_bytes_forward
+  20. Fwd Packet Length Max
+  21. Flow IAT Mean
+  22. Init_Win_bytes_backward
+  23. Total Length of Fwd Packets
+  24. Subflow Fwd Bytes
+  25. Fwd Header Length
+  26. pyDestination Port
+  27. Fwd Packet Length Mean
+  28. Bwd Header Length
+  29. Fwd Packet Length Std
+  30. Bwd Packets/s
+  31. Bwd Packet Length Min
+  32. min_seg_size_forward
+  33. Fwd Packets/s
+  34. Flow Packets/s
+  35. Bwd IAT Max
+  36. Flow Bytes/s
+  37. PSH Flag Count
+  38. Bwd IAT Total
+  39. Min Packet Length
+  40. Total Fwd Packets
+  41. FIN Flag Count
+  42. ACK Flag Count

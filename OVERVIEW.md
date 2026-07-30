@@ -31,24 +31,27 @@ Cyber Surakshya aims to evolve from a standalone ML-based IDS into a full **mult
 | Component | Status |
 |---|---|
 | CICIDS2017 preprocessing pipeline | ✅ Complete |
-| ML training (RF, ET, GB, VotingEnsemble) | ✅ Complete |
+| ML training (RF, GB, DNN, VotingEnsemble) | ✅ Complete |
+| Dual-layer Anomaly Detection (iforest + AE) | ✅ Complete |
 | Inference pipeline + Zeek conn.log bridge | ✅ Complete |
 | FastAPI REST backend | ✅ Complete |
-| Minimal HTML/JS frontend | ✅ Complete |
+| Real ML Simulation & Live Feed (SSE) | ✅ Complete |
+| Minimal React / HTML/JS frontend | ✅ Complete |
 | Platform domain schemas (Pydantic v2) | ✅ Complete |
-| Memory abstraction layer | ✅ Complete |
+| Platform Actions layer (`platform.actions`) | ✅ Complete |
+| Memory abstraction layer (`QdrantSqliteMemoryProvider`) | ✅ Complete |
 | LangGraph orchestration shell | ✅ Complete |
 | `DetectionAgent` (LangGraph node) | ✅ Complete |
-| `IDSDetectionAdapter` (bridge) | ✅ Complete |
+| `IDSDetectionAdapter` (ML bridge) | ✅ Complete |
 | `AnalysisAgent` (LangGraph node) | ✅ Complete |
 | `DeterministicRuleEngine` (AI engine) | ✅ Complete |
+| `DecisionAgent` (LangGraph node) | ✅ Complete |
+| `DeterministicDecisionEngine` (Decision engine) | ✅ Complete |
+| `ResponseAgent` (Response & Mitigation node) | 🔲 Planned (Next Component) |
 
 | Coordinator Agent | 🔲 Planned |
-| Decision Agent | 🔲 Planned |
-| Response Agent | 🔲 Planned |
 | Learning Agent | 🔲 Planned |
 | LLM engine integration (Ollama/OpenAI) | 🔲 Planned |
-| Persistent storage (DB/vector store) | 🔲 Planned |
 | MITRE ATT&CK mapping | 🔲 Planned |
 | Production Zeek integration | 🔲 Planned |
 

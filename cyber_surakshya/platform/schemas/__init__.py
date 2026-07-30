@@ -5,6 +5,12 @@ from cyber_surakshya.platform.schemas.analysis_result import (
     AnalysisEvidence,
     AnalysisResult,
 )
+from cyber_surakshya.platform.schemas.decision_result import (
+    ApprovalStatus,
+    DecisionPriority,
+    DecisionResult,
+    DecisionStatus,
+)
 from cyber_surakshya.platform.schemas.detection_result import DetectionResult
 from cyber_surakshya.platform.schemas.security_event import (
     NetworkEndpoint,
@@ -15,6 +21,10 @@ __all__ = [
     "Alert",
     "AnalysisEvidence",
     "AnalysisResult",
+    "ApprovalStatus",
+    "DecisionPriority",
+    "DecisionResult",
+    "DecisionStatus",
     "DetectionResult",
     "NetworkEndpoint",
     "SecurityEvent",

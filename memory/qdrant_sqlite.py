@@ -246,16 +246,17 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
                 raise MemoryError(f"SQLite error: {e}")
 
     def search(self, collection: str, query: MemoryQuery) -> list[MemorySearchResult]:
-        with self._lock:
-            self._ensure_qdrant_collection(collection)
-            
-            qdrant_scores = {}
-            if query.query_text:
+       with self._lock:
+        self._ensure_qdrant_collection(collection)
+
+        qdrant_scores = {}
+
+        if query.query_text:
+            try:
+                vector = self._encoder.encode(query.query_text).tolist()
+
                 try:
-                    vector = self._encoder.encode(query.query_text).tolist()
-                try:
-                    from qdrant_client.models import QueryRequest  # noqa
-                    # qdrant-client >= 1.7.0 uses query_points
+                    # qdrant-client >= 1.7
                     response = self._qdrant.query_points(
                         collection_name=collection,
                         query=vector,
@@ -263,102 +264,107 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
                         with_payload=True,
                     )
                     hits = response.points
+
                 except AttributeError:
-                    # fallback for very old qdrant-client that still has .search()
+                    # Older qdrant-client versions
                     hits = self._qdrant.search(
                         collection_name=collection,
                         query_vector=vector,
                         limit=query.limit or 1000,
                         with_payload=True,
                     )
+
                 for hit in hits:
                     qdrant_scores[str(hit.id)] = hit.score
-                except Exception as e:
-                    raise MemoryError(f"Qdrant search failed: {e}")
-            
-            sql = "SELECT * FROM memory_records WHERE collection = ?"
-            params = [collection]
-            
-            if query.record_ids:
-                sql += f" AND record_id IN ({','.join(['?'] * len(query.record_ids))})"
-                params.extend(query.record_ids)
-                
-            if query.record_types:
-                sql += f" AND record_type IN ({','.join(['?'] * len(query.record_types))})"
-                params.extend(query.record_types)
-                
-            if query.entity_ids:
-                sql += f" AND entity_id IN ({','.join(['?'] * len(query.entity_ids))})"
-                params.extend(query.entity_ids)
-                
-            if query.correlation_id:
-                sql += " AND correlation_id = ?"
-                params.append(query.correlation_id)
-                
-            if query.trace_id:
-                sql += " AND trace_id = ?"
-                params.append(query.trace_id)
-                
-            if query.created_after:
-                sql += " AND created_at >= ?"
-                params.append(query.created_after.isoformat())
-                
-            if query.created_before:
-                sql += " AND created_at <= ?"
-                params.append(query.created_before.isoformat())
-                
-            if query.updated_after:
-                sql += " AND updated_at >= ?"
-                params.append(query.updated_after.isoformat())
-                
-            if query.updated_before:
-                sql += " AND updated_at <= ?"
-                params.append(query.updated_before.isoformat())
 
-            if query.query_text:
-                q_ids = list(qdrant_scores.keys())
-                sql += f" AND record_id IN ({','.join(['?'] * len(q_ids))})"
-                params.extend(q_ids)
+            except Exception as e:
+                raise MemoryError(f"Qdrant search failed: {e}")
 
-            order_col = "created_at" if query.order_by == "created_at" else "updated_at"
-            sql += f" ORDER BY {order_col} {'DESC' if query.descending else 'ASC'}"
-            
-            try:
-                with sqlite3.connect(self._db_path) as conn:
-                    cursor = conn.execute(sql, params)
-                    rows = cursor.fetchall()
-            except sqlite3.Error as e:
-                raise MemoryError(f"SQLite search failed: {e}")
+        sql = "SELECT * FROM memory_records WHERE collection = ?"
+        params = [collection]
 
-            results = []
-            for row in rows:
-                rec = self._deserialize_record(row)
-                
-                if query.metadata:
-                    match = True
-                    for k, v in query.metadata.items():
-                        if rec.metadata.get(k) != v:
-                            match = False
-                            break
-                    if not match:
-                        continue
-                        
-                if query.tags:
-                    match = True
-                    for t in query.tags:
-                        if t not in rec.tags:
-                            match = False
-                            break
-                    if not match:
-                        continue
-                        
-                score = qdrant_scores.get(rec.record_id) if query.query_text else 1.0
-                results.append(MemorySearchResult(record=rec, score=score))
-                
-            if query.query_text:
-                results.sort(key=lambda x: x.score, reverse=True)
-                
-            if query.limit and len(results) > query.limit:
-                results = results[:query.limit]
-                
-            return results
+        if query.record_ids:
+            sql += f" AND record_id IN ({','.join(['?'] * len(query.record_ids))})"
+            params.extend(query.record_ids)
+
+        if query.record_types:
+            sql += f" AND record_type IN ({','.join(['?'] * len(query.record_types))})"
+            params.extend(query.record_types)
+
+        if query.entity_ids:
+            sql += f" AND entity_id IN ({','.join(['?'] * len(query.entity_ids))})"
+            params.extend(query.entity_ids)
+
+        if query.correlation_id:
+            sql += " AND correlation_id = ?"
+            params.append(query.correlation_id)
+
+        if query.trace_id:
+            sql += " AND trace_id = ?"
+            params.append(query.trace_id)
+
+        if query.created_after:
+            sql += " AND created_at >= ?"
+            params.append(query.created_after.isoformat())
+
+        if query.created_before:
+            sql += " AND created_at <= ?"
+            params.append(query.created_before.isoformat())
+
+        if query.updated_after:
+            sql += " AND updated_at >= ?"
+            params.append(query.updated_after.isoformat())
+
+        if query.updated_before:
+            sql += " AND updated_at <= ?"
+            params.append(query.updated_before.isoformat())
+
+        if query.query_text:
+            q_ids = list(qdrant_scores.keys())
+
+            # No semantic matches found
+            if not q_ids:
+                return []
+
+            sql += f" AND record_id IN ({','.join(['?'] * len(q_ids))})"
+            params.extend(q_ids)
+
+        order_col = "created_at" if query.order_by == "created_at" else "updated_at"
+        sql += f" ORDER BY {order_col} {'DESC' if query.descending else 'ASC'}"
+
+        try:
+            with sqlite3.connect(self._db_path) as conn:
+                cursor = conn.execute(sql, params)
+                rows = cursor.fetchall()
+        except sqlite3.Error as e:
+            raise MemoryError(f"SQLite search failed: {e}")
+
+        results = []
+
+        for row in rows:
+            rec = self._deserialize_record(row)
+
+            if query.metadata:
+                if not all(rec.metadata.get(k) == v for k, v in query.metadata.items()):
+                    continue
+
+            if query.tags:
+                if not all(tag in rec.tags for tag in query.tags):
+                    continue
+
+            score = qdrant_scores.get(rec.record_id, 1.0) if query.query_text else 1.0
+
+            results.append(
+                MemorySearchResult(
+                    record=rec,
+                    score=score,
+                )
+            )
+
+        if query.query_text:
+            results.sort(key=lambda x: x.score, reverse=True)
+
+        if query.limit:
+            results = results[:query.limit]
+
+        return results
