@@ -1,0 +1,1218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0}img,svg{max-width:100%}</style>
+<title>Cyber Surakshya — Defence Presentation</title>
+<style>
+  /* ══════════════════════════════════════════════════════════════
+     Single-theme deck. Committed dark palette — a security
+     operations console, projected in a dim room. Every colour is
+     painted explicitly so the page holds on either host ground.
+     ══════════════════════════════════════════════════════════════ */
+  :root {
+    --ground:   #0a0e15;
+    --stage:    #0d1219;
+    --panel:    #141c26;
+    --panel-2:  #1a2430;
+    --rule:     #24303f;
+    --rule-hi:  #33455a;
+
+    --ink:      #e8eef7;
+    --soft:     #a3b1c4;
+    --muted:    #6b7b91;
+
+    --accent:   #45c9b9;   /* UI accent — text, rules, emphasis */
+    --accent-d: #0f7d72;
+
+    /* Chart categorical pair — validated: L-band, chroma, CVD ΔE 12.1
+       protan / 19.0 normal, contrast ≥3:1 on #131a24 */
+    --cat-1:    #12a08f;
+    --cat-2:    #bf8a28;
+
+    /* Status — reserved, never used as a series colour */
+    --good:     #5fbf85;
+    --warn:     #e0a13c;
+    --crit:     #ec6b72;
+
+    --font-ui:  "Segoe UI Variable Display", "Segoe UI", -apple-system,
+                BlinkMacSystemFont, system-ui, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular",
+                Consolas, "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    margin: 0;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Stage: fixed 1280×720, scaled to viewport ─────────────── */
+  #viewport {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    position: relative;
+    transform-origin: center center;
+    background: var(--stage);
+    box-shadow: 0 0 0 1px var(--rule), 0 30px 90px -40px #000;
+    overflow: hidden;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    padding: 54px 68px 60px;
+    display: none;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .slide.on { display: flex; }
+
+  /* ── Chrome ────────────────────────────────────────────────── */
+  #rail {
+    position: absolute; top: 0; left: 0; height: 2px;
+    background: var(--accent); z-index: 40; transition: width .22s ease;
+  }
+  #tag {
+    position: absolute; left: 68px; top: 26px; z-index: 30;
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .19em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  #tag b { color: var(--accent); font-weight: 600; }
+  #num {
+    position: absolute; right: 68px; bottom: 24px; z-index: 30;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em;
+    color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  #brand {
+    position: absolute; left: 68px; bottom: 24px; z-index: 30;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em;
+    color: var(--muted);
+  }
+  #help {
+    position: fixed; right: 14px; top: 12px; z-index: 60;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--muted);
+    letter-spacing: .08em; background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 4px; padding: 6px 10px;
+  }
+  #help kbd {
+    font-family: var(--font-mono); color: var(--accent);
+    background: none; border: none; font-size: 10.5px;
+  }
+
+  /* ── Typography ────────────────────────────────────────────── */
+  h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
+  .slide h2 {
+    font-size: 40px; font-weight: 640; letter-spacing: -.022em;
+    line-height: 1.08;
+  }
+  .slide h2 em { font-style: normal; color: var(--accent); }
+  .kicker {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .lead { font-size: 20px; line-height: 1.5; color: var(--soft); max-width: 68ch; margin: 0; }
+  p { margin: 0; }
+  .hr { height: 1px; background: var(--rule); }
+
+  ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 13px; }
+  li { font-size: 18px; line-height: 1.46; color: var(--soft); padding-left: 22px; position: relative; }
+  li::before {
+    content: ""; position: absolute; left: 0; top: .62em;
+    width: 7px; height: 1.5px; background: var(--accent);
+  }
+  li b, li strong { color: var(--ink); font-weight: 600; }
+  code {
+    font-family: var(--font-mono); font-size: .86em;
+    color: var(--accent); background: #10241f;
+    padding: 1px 6px; border-radius: 3px;
+  }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; flex: 1; min-height: 0; }
+  .cols-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .grow { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+
+  /* ── Cards ─────────────────────────────────────────────────── */
+  .card {
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 5px; padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 9px;
+  }
+  .card .h {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .card h4 { font-size: 17px; font-weight: 620; }
+  .card p { font-size: 15px; line-height: 1.45; color: var(--soft); }
+  .card.warn { border-left: 2px solid var(--crit); }
+  .card.warn .h { color: var(--crit); }
+  .card.good { border-left: 2px solid var(--good); }
+  .card.good .h { color: var(--good); }
+
+  /* ── Stat tiles ────────────────────────────────────────────── */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--rule);
+    border-top: 2px solid var(--accent); border-radius: 5px;
+    padding: 15px 17px 17px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat .v {
+    font-family: var(--font-mono); font-size: 34px; font-weight: 600;
+    color: var(--ink); letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .stat .k {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .stat .s { font-size: 13.5px; color: var(--soft); line-height: 1.35; }
+  .stat.crit { border-top-color: var(--crit); }
+  .stat.crit .v { color: var(--crit); }
+  .stat.good { border-top-color: var(--good); }
+  .stat.good .v { color: var(--good); }
+
+  /* ── Tables ────────────────────────────────────────────────── */
+  table {
+    width: 100%; border-collapse: collapse;
+    font-family: var(--font-mono); font-size: 13.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  th {
+    text-align: right; padding: 9px 14px; color: var(--muted);
+    font-size: 10px; letter-spacing: .13em; text-transform: uppercase;
+    font-weight: 600; border-bottom: 1px solid var(--rule-hi); white-space: nowrap;
+  }
+  th:first-child, td:first-child { text-align: left; }
+  td {
+    padding: 9px 14px; border-bottom: 1px solid var(--rule);
+    color: var(--soft); text-align: right; white-space: nowrap;
+  }
+  td:first-child { color: var(--ink); }
+  tr.hi td { background: #10241f; color: var(--ink); }
+  tr.hi td:first-child { color: var(--accent); font-weight: 600; }
+  td .bad { color: var(--crit); font-weight: 600; }
+  td .ok  { color: var(--good); font-weight: 600; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* ── Flow strips ───────────────────────────────────────────── */
+  .flow { display: flex; align-items: stretch; gap: 0; flex-wrap: nowrap; }
+  .flow .n {
+    flex: 1; background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 4px; padding: 13px 12px; text-align: center;
+    display: flex; flex-direction: column; gap: 5px; justify-content: center;
+  }
+  .flow .n .t { font-size: 14.5px; font-weight: 600; color: var(--ink); line-height: 1.2; }
+  .flow .n .d { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); line-height: 1.3; }
+  .flow .n.acc { border-color: var(--accent-d); background: #0f1f22; }
+  .flow .n.gate { border-color: #5c2b30; background: #1d1214; }
+  .flow .n.gate .t { color: var(--crit); }
+  .flow .a {
+    align-self: center; color: var(--rule-hi); font-size: 17px;
+    padding: 0 9px; flex: none;
+  }
+
+  /* ── Charts ────────────────────────────────────────────────── */
+  .chartbox {
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 5px; padding: 16px 18px 12px;
+    display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1;
+  }
+  .chart-hd { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+  .chart-hd .t { font-size: 15px; font-weight: 620; color: var(--ink); }
+  .chart-hd .u { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .legend { display: flex; gap: 18px; align-items: center; }
+  .legend span {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--soft);
+  }
+  .legend i { width: 11px; height: 11px; border-radius: 2px; flex: none; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .ax { fill: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+  .axl { fill: var(--soft); font-family: var(--font-mono); font-size: 12px; }
+  .vlab { fill: var(--ink); font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; }
+  .grid { stroke: var(--rule); stroke-width: 1; }
+  .base { stroke: var(--rule-hi); stroke-width: 1; }
+
+  #tip {
+    position: fixed; z-index: 90; pointer-events: none; opacity: 0;
+    background: #060a0f; border: 1px solid var(--rule-hi); border-radius: 4px;
+    padding: 7px 10px; font-family: var(--font-mono); font-size: 11.5px;
+    color: var(--ink); transition: opacity .1s; white-space: nowrap;
+    box-shadow: 0 8px 24px -12px #000;
+  }
+  #tip .m { color: var(--muted); }
+
+  /* ── Title slide ───────────────────────────────────────────── */
+  .title { justify-content: center; gap: 26px; }
+  .title h1 {
+    font-size: 68px; font-weight: 650; letter-spacing: -.03em; line-height: 1.02;
+  }
+  .title h1 span { color: var(--accent); display: block; }
+  .title .sub { font-size: 21px; color: var(--soft); max-width: 60ch; line-height: 1.45; }
+  .meta {
+    display: flex; gap: 46px; padding-top: 22px; border-top: 1px solid var(--rule);
+    font-family: var(--font-mono); font-size: 12.5px; color: var(--muted);
+  }
+  .meta div { display: flex; flex-direction: column; gap: 5px; }
+  .meta b { color: var(--ink); font-weight: 600; font-size: 13px; }
+
+  /* ── Notes ─────────────────────────────────────────────────── */
+  #notes {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+    max-height: 38vh; overflow-y: auto;
+    background: #05080c; border-top: 1px solid var(--rule-hi);
+    padding: 16px 26px 18px; display: none;
+  }
+  #notes.on { display: block; }
+  #notes .h {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 8px;
+  }
+  #notes .b { font-size: 15px; line-height: 1.55; color: var(--soft); max-width: 100ch; }
+  .note-src { display: none; }
+
+  .backup-badge {
+    display: inline-block; font-family: var(--font-mono); font-size: 9.5px;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--warn);
+    border: 1px solid #4a3a18; border-radius: 3px; padding: 3px 8px;
+    align-self: flex-start;
+  }
+
+  @media print {
+    body { overflow: visible; background: #fff; }
+    #viewport { position: static; display: block; }
+    #stage { width: 1280px; height: auto; box-shadow: none; }
+    .slide { position: static; display: flex !important; height: 720px; page-break-after: always; }
+    #help, #notes, #rail { display: none; }
+  }
+</style>
+</head>
+<body>
+
+
+<div id="viewport">
+  <div id="stage">
+    <div id="rail"></div>
+    <div id="tag"></div>
+    <div id="brand">CYBER SURAKSHYA</div>
+    <div id="num"></div>
+
+    <!-- ═══════════ 01 TITLE ═══════════ -->
+    <section class="slide title" data-tag="Final project defence">
+      <div class="kicker">Bachelor's final-year project · defence presentation</div>
+      <h1>Cyber Surakshya<span>Detection was never the hard part.</span></h1>
+      <p class="sub">
+        A multi-agent intrusion detection and response platform that classifies network flows,
+        explains what it found, decides what to do, and then refuses to do it without an analyst.
+      </p>
+      <div class="meta">
+        <div><span>Candidate</span><b>Surya Pokhrel</b></div>
+        <div><span>Dataset</span><b>CICIDS2017 · 2,520,751 flows</b></div>
+        <div><span>Served model</span><b>MLP · macro F1 0.966</b></div>
+        <div><span>Codebase</span><b>29,353 LOC · 446 tests</b></div>
+      </div>
+      <div class="note-src">Open with the subtitle. Most IDS projects stop at a confusion matrix. Mine argues that the interesting engineering starts after the classifier is good — in what the system does with a detection, and in what it refuses to do automatically. Two defensible findings tonight: a metric selection trap that would have shipped a broken model, and a response layer designed around refusal.</div>
+    </section>
+
+    <!-- ═══════════ 02 PROBLEM ═══════════ -->
+    <section class="slide" data-tag="Motivation">
+      <div class="kicker">The problem</div>
+      <h2>A detection nobody acts on is<br><em>not a defence</em></h2>
+      <div class="cols">
+        <ul>
+          <li>Signature-based IDS cannot generalise to attack variants; they match what has already been seen.</li>
+          <li>ML-based IDS generalise, but stop at a label. Somebody still has to read it, judge it, and act.</li>
+          <li>SOC teams face alert fatigue — the bottleneck has moved from <b>detecting</b> to <b>triaging and responding</b>.</li>
+          <li>Fully automated response is the obvious answer and the dangerous one: an automated block on a false positive is a self-inflicted denial of service.</li>
+        </ul>
+        <div class="grow">
+          <div class="card warn">
+            <span class="h">The gap this project addresses</span>
+            <p>Published network-IDS work is dominated by classifier benchmarking on CICIDS2017. The pipeline <em>after</em> the classifier — triage, decision, authorisation, containment, feedback — is largely left as an implementation detail.</p>
+          </div>
+          <div class="card">
+            <span class="h">Position</span>
+            <p>Treat the IDS as one component inside an agentic operations platform, and make the authorisation boundary an explicit, testable part of the architecture rather than an afterthought.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">Keep this short — two minutes maximum. The examiner's question here is usually "why multi-agent, why not just a bigger model". Answer: because the remaining problems are not classification problems. Triage, authorisation and feedback are workflow problems, and a single model cannot express "I am confident but not permitted".</div>
+    </section>
+
+    <!-- ═══════════ 03 QUESTIONS ═══════════ -->
+    <section class="slide" data-tag="Problem statement">
+      <div class="kicker">Research questions</div>
+      <h2>Three questions this work answers</h2>
+      <div class="grow" style="gap:14px">
+        <div class="card">
+          <span class="h">RQ 1 — evaluation</span>
+          <h4>On a dataset this imbalanced, does the standard reporting metric select the right model?</h4>
+          <p>CICIDS2017 is ~99% four classes. Accuracy and weighted F1 are the conventional headline figures. Do they distinguish a model that detects every attack family from one blind to the rarest?</p>
+        </div>
+        <div class="card">
+          <span class="h">RQ 2 — architecture</span>
+          <h4>Can a supervised classifier and an unsupervised anomaly layer be combined so that novel traffic is not silently dismissed as benign?</h4>
+          <p>A closed-set classifier must assign one of seven labels. What happens to traffic that belongs to none of them?</p>
+        </div>
+        <div class="card">
+          <span class="h">RQ 3 — autonomy</span>
+          <h4>How much of the response can be automated without removing the analyst from the loop?</h4>
+          <p>Where exactly is the boundary between what the system may do on its own and what requires a human ruling — and can that boundary be enforced rather than documented?</p>
+        </div>
+      </div>
+      <div class="note-src">Say these are the three questions and that the rest of the talk answers them in order. If time is cut short, RQ1 is the one with the strongest empirical result — go there first.</div>
+    </section>
+
+    <!-- ═══════════ 04 OBJECTIVES ═══════════ -->
+    <section class="slide" data-tag="Objectives">
+      <div class="kicker">Objectives</div>
+      <h2>Five objectives, five deliverables</h2>
+      <div class="grow">
+        <table>
+          <thead><tr><th>Objective</th><th style="text-align:left">Deliverable</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>O1 · Build a reproducible ML pipeline over CICIDS2017</td><td style="text-align:left">preprocess.py + train.py + manifest.json</td><td><span class="ok">MET</span></td></tr>
+            <tr><td>O2 · Compare model families under an honest metric</td><td style="text-align:left">4 supervised models, macro-F1 selection with a recall floor</td><td><span class="ok">MET</span></td></tr>
+            <tr><td>O3 · Add unsupervised novelty detection</td><td style="text-align:left">Isolation Forest + autoencoder, benign-only training</td><td><span class="ok">MET</span></td></tr>
+            <tr><td>O4 · Orchestrate detection → response as agents</td><td style="text-align:left">LangGraph pipeline, 6 agents, coordinated work queue</td><td><span class="ok">MET</span></td></tr>
+            <tr><td>O5 · Ingest real traffic, not only dataset rows</td><td style="text-align:left">dumpcap → CICFlowMeter → Redis → pipeline</td><td><span class="ok">MET</span></td></tr>
+            <tr><td>O6 · Execute containment on production infrastructure</td><td style="text-align:left">firewall / EDR / SOAR integrations</td><td><span style="color:var(--warn);font-weight:600">OUT OF SCOPE</span></td></tr>
+          </tbody>
+        </table>
+        <div class="card warn">
+          <span class="h">Stated honestly</span>
+          <p>O6 was deliberately excluded. Only simulation-safe executors are registered; nothing in the submitted system touches real network infrastructure. The authorisation architecture is complete and tested — the integrations behind it are not, and I do not claim them.</p>
+        </div>
+      </div>
+      <div class="note-src">Volunteering the out-of-scope item before an examiner finds it is worth more than defending it afterwards. If pushed: the guard, trust policy and approval store are fully implemented and tested; swapping SimulatedContainmentExecutor for a real firewall client is a single port implementation, roughly 100 lines, and is future work precisely because it needs an authorised test environment.</div>
+    </section>
+
+    <!-- ═══════════ 05 DATASET ═══════════ -->
+    <section class="slide" data-tag="Methodology">
+      <div class="kicker">Data</div>
+      <h2>CICIDS2017 — and the imbalance that defines the problem</h2>
+      <div class="cols" style="grid-template-columns: 1.15fr 1fr">
+        <div class="grow">
+          <table>
+            <thead><tr><th>Class</th><th>Flows</th><th>Share</th></tr></thead>
+            <tbody>
+              <tr><td>BENIGN</td><td>2,095,057</td><td>83.1%</td></tr>
+              <tr><td>DOS</td><td>193,745</td><td>7.7%</td></tr>
+              <tr><td>DDOS</td><td>128,014</td><td>5.1%</td></tr>
+              <tr><td>PORTSCAN</td><td>90,694</td><td>3.6%</td></tr>
+              <tr><td>BRUTEFORCE</td><td>9,150</td><td>0.36%</td></tr>
+              <tr class="hi"><td>WEBATTACK</td><td>2,143</td><td>0.09%</td></tr>
+              <tr class="hi"><td>BOTNET</td><td>1,948</td><td>0.08%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="grow">
+          <div class="card warn">
+            <span class="h">The structural fact</span>
+            <p>The four largest classes are <b>99.5%</b> of all flows. The two most interesting attack families — web application attacks and botnet C2 — are <b>0.17%</b> between them.</p>
+          </div>
+          <div class="card">
+            <span class="h">Consequence</span>
+            <p>A model that ignores both rare classes entirely still reports ~99% accuracy. Any metric weighted by support inherits that blindness.</p>
+          </div>
+          <div class="card">
+            <span class="h">Correction on the record</span>
+            <p>Earlier project documents listed eight classes including INFILTRATION. The cleaned dataset contains <b>zero</b> infiltration rows; the platform cannot detect it and I do not claim it.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">This slide is the setup for the whole results section. Land the 99.5% / 0.17% contrast clearly and pause. The infiltration correction is deliberate — it shows the documentation was audited against the artifacts rather than trusted.</div>
+    </section>
+
+    <!-- ═══════════ 06 PIPELINE ═══════════ -->
+    <section class="slide" data-tag="Methodology">
+      <div class="kicker">Preprocessing</div>
+      <h2>From 2.5M raw flows to a 42-feature training matrix</h2>
+      <div class="flow">
+        <div class="n"><span class="t">Sample</span><span class="d">stratified<br>≤500k rows</span></div>
+        <div class="a">→</div>
+        <div class="n"><span class="t">Normalise</span><span class="d">raw labels<br>→ 7 classes</span></div>
+        <div class="a">→</div>
+        <div class="n"><span class="t">Clean</span><span class="d">coerce numeric<br>median-fill inf/NaN</span></div>
+        <div class="a">→</div>
+        <div class="n acc"><span class="t">Select</span><span class="d">ANOVA F top-40<br>+ Zeek priority</span></div>
+        <div class="a">→</div>
+        <div class="n"><span class="t">Split</span><span class="d">80/20 stratified<br>scaler on train only</span></div>
+        <div class="a">→</div>
+        <div class="n acc"><span class="t">Balance</span><span class="d">hybrid under-<br>+ oversample</span></div>
+      </div>
+      <div class="cols" style="flex:1">
+        <div class="grow">
+          <div class="card">
+            <span class="h">Two decisions worth defending</span>
+            <p><b>Scaler fitted on the training split only.</b> Fitting on the full dataset leaks test-set distribution into the transform and inflates every reported figure.</p>
+            <p><b>Balancing applied after the split, to the training set only.</b> The test set keeps the real class distribution, so the reported recall on WEBATTACK is recall on genuinely rare traffic.</p>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="card">
+            <span class="h">Why hybrid, not SMOTE</span>
+            <p>BENIGN is capped rather than discarded; rare classes are oversampled to a floor. Implemented directly — no external imbalance library — so the procedure is reproducible from the repository alone and the random seed fully determines the result.</p>
+          </div>
+          <div class="card">
+            <span class="h">Feature set</span>
+            <p>Top-40 by ANOVA F-score, plus features required to translate Zeek <code>conn.log</code> telemetry — <b>42 columns</b>, fixed and recorded in <code>feature_columns.json</code>.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">The leakage point is the one an examiner will probe. Be ready to say exactly where StandardScaler.fit is called — after train_test_split, on X_train only — and that balance_classes runs after that, on the training partition.</div>
+    </section>
+
+    <!-- ═══════════ 07 MODELS ═══════════ -->
+    <section class="slide" data-tag="Methodology">
+      <div class="kicker">Models</div>
+      <h2>Six models, two jobs</h2>
+      <div class="cols">
+        <div class="grow">
+          <div class="kicker" style="color:var(--accent)">Supervised — which of seven classes</div>
+          <div class="card"><h4>Random Forest</h4><p>300 trees, full depth, <code>max_features="sqrt"</code>, balanced class weights. Bagging supplies the regularisation.</p></div>
+          <div class="card"><h4>Histogram Gradient Boosting</h4><p>300 rounds, depth 8, lr 0.05, L2 = 1.0, early stopping. Histogram-binned for ~10× the speed of classic GB at equal accuracy.</p></div>
+          <div class="card"><h4>Deep Neural Network — MLP</h4><p>512 → 256 → 128, ReLU, Adam, early stopping. L2 <code>alpha</code> substitutes for dropout; upstream StandardScaler substitutes for batch norm.</p></div>
+          <div class="card"><h4>Voting Ensemble</h4><p>Soft vote over the three above — averages probability vectors, not hard votes.</p></div>
+        </div>
+        <div class="grow">
+          <div class="kicker" style="color:var(--cat-2)">Unsupervised — is this traffic familiar</div>
+          <div class="card"><h4>Isolation Forest</h4><p>200 trees, fitted on <b>BENIGN rows only</b>. Threshold calibrated at the 5th percentile of benign anomaly scores rather than left at the contamination default.</p></div>
+          <div class="card"><h4>Autoencoder</h4><p>d → 2e → e → 2e → d, ReLU, MSE, mini-batch SGD with gradient clipping. Implemented in NumPy with manual backpropagation — no TensorFlow or PyTorch dependency. Threshold at the 99th percentile of benign reconstruction error.</p></div>
+          <div class="card good">
+            <span class="h">Why train on benign only</span>
+            <p>Both learn the shape of normal traffic. They therefore answer a question the classifier structurally cannot: <em>have I seen traffic like this before</em> — which is defined for attacks that were never in the training set.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">If asked why the autoencoder is hand-written: it removes a 2GB dependency from a project whose whole point is reproducibility, and manual backprop is defensible in a final-year submission. Concede readily that a Keras autoencoder would train faster and probably converge lower — it is listed in future work.</div>
+    </section>
+
+    <!-- ═══════════ 08 RESULTS CHART ═══════════ -->
+    <section class="slide" data-tag="Results">
+      <div class="kicker">Results · RQ 1</div>
+      <h2>Every model looks excellent. <em>One of them is.</em></h2>
+      <div class="chartbox">
+        <div class="chart-hd">
+          <span class="t">Weighted F1 versus macro F1, four supervised models</span>
+          <span class="u">n = 100,088 held-out flows</span>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--cat-2)"></i>Weighted F1 — support-weighted</span>
+          <span><i style="background:var(--cat-1)"></i>Macro F1 — every class counts equally</span>
+        </div>
+        <div id="chart1"></div>
+      </div>
+      <div class="card warn" style="flex:none">
+        <span class="h">Read the gap, not the height</span>
+        <p>Weighted F1 separates the four models by <b>0.0046</b>. Macro F1 separates them by <b>0.124</b> — a 27× larger signal. On weighted F1 these models are indistinguishable; on macro F1 one is clearly correct.</p>
+      </div>
+      <div class="note-src">Do not rush this. Point at the amber bars first — all four essentially identical, all above 0.99. Then the teal. The DNN's teal bar is nearly as tall as its amber one; for the other three there is a visible collapse. That collapse is the finding. Full numeric table is two slides on if anyone wants it.</div>
+    </section>
+
+    <!-- ═══════════ 09 THE TRAP ═══════════ -->
+    <section class="slide" data-tag="Key finding 1">
+      <div class="kicker">Finding 1 · the metric trap</div>
+      <h2>Where the weighted average <em>hides a blind model</em></h2>
+      <div class="chartbox">
+        <div class="chart-hd">
+          <span class="t">Per-class recall — Voting Ensemble against the served DNN</span>
+          <span class="u">held-out test set · higher is better</span>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--cat-2)"></i>Voting Ensemble — weighted F1 0.9926</span>
+          <span><i style="background:var(--cat-1)"></i>DNN — weighted F1 0.9970</span>
+        </div>
+        <div id="chart2"></div>
+      </div>
+      <div class="note-src">This is the slide the defence turns on. The two models differ by 0.0044 weighted F1 — statistically nothing. On WEBATTACK the ensemble recalls 10% and the DNN recalls 95%. An ensemble reported as 99.26% would miss nine out of ten web application attacks in production. Let the dumbbells sit on screen while you say that.</div>
+    </section>
+
+    <!-- ═══════════ 10 TABLE ═══════════ -->
+    <section class="slide" data-tag="Results">
+      <div class="kicker">Full results</div>
+      <h2>The numbers behind both charts</h2>
+      <div class="grow">
+        <table>
+          <thead>
+            <tr><th>Model</th><th>Accuracy</th><th>F1 weighted</th><th>F1 macro</th><th>Recall macro</th><th>WEBATTACK recall</th><th>BOTNET recall</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Random Forest</td><td>0.9942</td><td>0.9924</td><td>0.8414</td><td>0.8126</td><td><span class="bad">0.077</span></td><td><span class="bad">0.613</span></td></tr>
+            <tr><td>Gradient Boosting</td><td>0.9943</td><td>0.9925</td><td>0.8447</td><td>0.8153</td><td><span class="bad">0.096</span></td><td><span class="bad">0.613</span></td></tr>
+            <tr><td>Voting Ensemble</td><td>0.9943</td><td>0.9926</td><td>0.8464</td><td>0.8160</td><td><span class="bad">0.100</span></td><td><span class="bad">0.613</span></td></tr>
+            <tr class="hi"><td>DNN — served</td><td>0.9971</td><td>0.9970</td><td>0.9655</td><td>0.9534</td><td><span class="ok">0.953</span></td><td>0.739</td></tr>
+          </tbody>
+        </table>
+        <div class="cols-3">
+          <div class="card"><span class="h">Best accuracy</span><p>The DNN also wins on accuracy — but by 0.0028, which is not a defensible basis for selection.</p></div>
+          <div class="card"><span class="h">Best weighted F1</span><p>The DNN again, by 0.0044. Still inside the noise you would expect from a different random seed.</p></div>
+          <div class="card good"><span class="h">Best macro F1</span><p>The DNN by <b>0.119</b>. This is the only metric here that makes the choice unambiguous.</p></div>
+        </div>
+      </div>
+      <div class="note-src">Keep this as the reference slide. The honest caveat if pressed: the DNN wins on every metric, so the trap did not actually cause a wrong selection here — it caused a wrong *justification*, and would have caused a wrong selection had the DNN been marginally worse on the majority classes. That is a fair thing to concede and it strengthens rather than weakens the point.</div>
+    </section>
+
+    <!-- ═══════════ 11 SELECTION RULE ═══════════ -->
+    <section class="slide" data-tag="Key finding 1">
+      <div class="kicker">The fix</div>
+      <h2>Selection as an enforced rule, <em>not a judgement call</em></h2>
+      <div class="cols">
+        <div class="grow">
+          <div class="card">
+            <span class="h">Before</span>
+            <p><code>max(all_metrics, key=f1_weighted)</code> — one line, and it would happily promote a model with 0.10 recall on web attacks.</p>
+          </div>
+          <div class="card good">
+            <span class="h">After</span>
+            <p>Rank by <b>macro F1</b>, but only among models clearing a <b>50% recall floor on every single class</b>. Models below the floor are named and excluded in the training log.</p>
+            <p>If no model clears the floor, the best macro F1 is still served — refusing to save anything would leave the platform with no detector — but the log says so loudly.</p>
+          </div>
+          <div class="card">
+            <span class="h">Recorded, not assumed</span>
+            <p><code>manifest.json</code> names the served artifact, the rule that chose it, the dataset fingerprint, the seed and the library versions. Which model is in production is an auditable fact.</p>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="stats" style="grid-template-columns:1fr 1fr">
+            <div class="stat crit"><span class="v">3 of 4</span><span class="k">models rejected</span><span class="s">by the per-class recall floor</span></div>
+            <div class="stat good"><span class="v">0.966</span><span class="k">served macro F1</span><span class="s">DNN, min class recall 0.739</span></div>
+          </div>
+          <div class="card warn">
+            <span class="h">Why this is a contribution, not a bug fix</span>
+            <p>The trap is a property of the dataset, not of my code. Any CICIDS2017 study reporting accuracy or weighted F1 as its headline is exposed to it. Three of my four models score above 0.99 weighted F1 while being effectively blind to web attacks — and published work using those same metrics on this same dataset cannot distinguish those cases either.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">Expected challenge: "isn't the floor arbitrary at 50%?" Yes, and say so — it is a policy parameter, not a discovered constant. Defend it as: any value in a broad middle range separates the observed cases, because the rejected models sit at 0.08-0.10 and the accepted one at 0.74. The result is not sensitive to the exact threshold anywhere between roughly 0.2 and 0.7.</div>
+    </section>
+
+    <!-- ═══════════ 12 ANOMALY ═══════════ -->
+    <section class="slide" data-tag="Key finding 2">
+      <div class="kicker">RQ 2 · the closed-set problem</div>
+      <h2>A classifier cannot say <em>"I have never seen this"</em></h2>
+      <div class="flow" style="gap:0">
+        <div class="n"><span class="t">Scaled flow</span><span class="d">42 features</span></div>
+        <div class="a">→</div>
+        <div class="n acc"><span class="t">MLP classifier</span><span class="d">label + confidence</span></div>
+        <div class="a">＋</div>
+        <div class="n acc"><span class="t">Isolation Forest</span><span class="d">score &lt; threshold</span></div>
+        <div class="a">∨</div>
+        <div class="n acc"><span class="t">Autoencoder</span><span class="d">recon error &gt; threshold</span></div>
+        <div class="a">→</div>
+        <div class="n gate"><span class="t">INCONCLUSIVE</span><span class="d">benign label,<br>anomaly fired</span></div>
+      </div>
+      <div class="cols" style="flex:1">
+        <div class="grow">
+          <ul>
+            <li>The seven-class model must assign one of seven labels. Traffic belonging to none of them is forced into the nearest — usually BENIGN.</li>
+            <li>Two detectors trained on benign traffic only supply the second opinion, combined through an <b>OR gate</b>: either firing raises the flag.</li>
+            <li>When the classifier says BENIGN and the anomaly layer disagrees, the detection is downgraded to <b>INCONCLUSIVE</b> and surfaced — not dismissed.</li>
+            <li>Both detectors ship with thresholds calibrated on benign percentiles and persisted alongside the models.</li>
+          </ul>
+        </div>
+        <div class="grow">
+          <div class="card good">
+            <span class="h">Why two and not one</span>
+            <p>They fail differently. Isolation Forest finds points that isolate in few random splits — global statistical outliers. The autoencoder finds flows it cannot reconstruct — structural unfamiliarity. A flow can be ordinary in every marginal distribution and still be structurally novel.</p>
+          </div>
+          <div class="card warn">
+            <span class="h">Cost, stated plainly</span>
+            <p>An OR gate maximises recall and pays for it in false positives. That is the correct trade only because the output is INCONCLUSIVE — a triage signal — and not an automated block. The authorisation layer is what makes this affordable.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">The link between this slide and the next is the argument of the whole thesis: an aggressive detector is only safe because the response layer is conservative. If asked for anomaly-layer numbers, they are in the training log per detector and combined — quote them from the backup slide rather than from memory.</div>
+    </section>
+
+    <!-- ═══════════ 13 ARCHITECTURE ═══════════ -->
+    <section class="slide" data-tag="System">
+      <div class="kicker">RQ 3 · architecture</div>
+      <h2>Six agents, one coordinated work queue</h2>
+      <div class="flow">
+        <div class="n acc"><span class="t">Coordinator</span><span class="d">routing hub<br>work queue · stall detection</span></div>
+        <div class="a">⇄</div>
+        <div class="n"><span class="t">Detection</span><span class="d">event →<br>DetectionResult</span></div>
+        <div class="a">→</div>
+        <div class="n"><span class="t">Analysis</span><span class="d">→ evidence,<br>summary, uncertainty</span></div>
+        <div class="a">→</div>
+        <div class="n"><span class="t">Decision</span><span class="d">→ action, priority,<br>approval required?</span></div>
+        <div class="a">→</div>
+        <div class="n gate"><span class="t">Response</span><span class="d">→ executed<br>or refused</span></div>
+      </div>
+      <div class="cols" style="flex:1">
+        <div class="grow">
+          <div class="card">
+            <span class="h">Hub and spoke, not a chain</span>
+            <p>Every worker returns to the coordinator, which re-derives outstanding work from state and dispatches the next stage. A linear chain processed exactly one event per run and silently dropped the rest, because each agent handles one pending item per call.</p>
+          </div>
+          <div class="card">
+            <span class="h">Append-only shared state</span>
+            <p>LangGraph <code>operator.add</code> reducers. Nodes return only their additions; no node can mutate another's output. Every result is validated by Pydantic v2 with <code>extra="forbid"</code>.</p>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="card warn">
+            <span class="h">Live-lock is a designed-for failure</span>
+            <p>Agents catch their own exceptions and return without producing a result — so "route while work is pending" would dispatch to a broken stage forever. The coordinator compares output-list lengths across dispatches, excludes any stage that made no progress, and records why as a run anomaly.</p>
+          </div>
+          <div class="card">
+            <span class="h">Learning sits outside the loop</span>
+            <p>Deliberately not a pipeline node — as one it would re-derive platform-wide metrics on every single flow.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">Likely question: "isn't this over-engineered for a student project?" The stall detector exists because the live-lock actually happened during development. Say that — a mechanism introduced in response to an observed failure is easier to defend than one introduced on principle.</div>
+    </section>
+
+    <!-- ═══════════ 14 REFUSAL ═══════════ -->
+    <section class="slide" data-tag="Key finding 3">
+      <div class="kicker">Finding 2 · the authorisation boundary</div>
+      <h2>The response layer is built <em>to refuse</em></h2>
+      <div class="flow">
+        <div class="n"><span class="t">Decision</span><span class="d">action + target</span></div>
+        <div class="a">→</div>
+        <div class="n gate"><span class="t">1 · Rejection</span><span class="d">analyst said no</span></div>
+        <div class="a">→</div>
+        <div class="n gate"><span class="t">2 · Approval</span><span class="d">requires_approval<br>and not approved</span></div>
+        <div class="a">→</div>
+        <div class="n gate"><span class="t">3 · ActionGuard</span><span class="d">trust tier · protected<br>targets · blast radius</span></div>
+        <div class="a">→</div>
+        <div class="n gate"><span class="t">4 · Idempotency</span><span class="d">already executed</span></div>
+        <div class="a">→</div>
+        <div class="n acc"><span class="t">Execute</span><span class="d">simulated<br>executors only</span></div>
+      </div>
+      <div class="cols" style="flex:1">
+        <div class="grow">
+          <ul>
+            <li>Four independent gates. Each refusal is <b>recorded as a result</b> — verdict, the rule that fired, and the reason — never as a silent no-op.</li>
+            <li>Verdicts are <code>ALLOW</code>, <code>DOWNGRADE</code>, <code>REQUIRE_APPROVAL</code>, <code>DENY</code>. A downgrade executes a weaker action rather than the requested one.</li>
+            <li>Awaiting-approval is <b>resumable</b>, not terminal: the coordinator retries it once an analyst rules.</li>
+          </ul>
+        </div>
+        <div class="grow">
+          <div class="card good">
+            <span class="h">The invariant that matters</span>
+            <p><b>The decision engine cannot approve itself.</b> A decision setting <code>requires_approval=False</code> clears the decision-level gate, but never substitutes for a human where the trust policy demands one. The live approval store is consulted first, and an engine's own trust tier is what determines whether its judgement is sufficient.</p>
+          </div>
+          <div class="card">
+            <span class="h">Fail-closed by default</span>
+            <p>Policy loads from <code>config/response_policy.yaml</code>, falling back to fail-closed defaults if absent. An unreadable policy file denies; it does not permit.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">This is finding two and the answer to RQ3. The boundary is enforced in code and covered by tests, not described in a document. If challenged on "why not just trust a confident model" — point back to the ensemble at 0.9926 weighted F1 with 10% web-attack recall. Confidence is not the same as correctness, and the system is built on that assumption.</div>
+    </section>
+
+    <!-- ═══════════ 15 INGESTION ═══════════ -->
+    <section class="slide" data-tag="System">
+      <div class="kicker">Beyond the dataset</div>
+      <h2>Real traffic, not replayed rows</h2>
+      <div class="flow">
+        <div class="n"><span class="t">Interface</span><span class="d">dumpcap<br>local or docker</span></div>
+        <div class="a">→</div>
+        <div class="n"><span class="t">Rotating pcap</span><span class="d">closed files only<br>+ retention sweep</span></div>
+        <div class="a">→</div>
+        <div class="n acc"><span class="t">CICFlowMeter</span><span class="d">packets → flow<br>features</span></div>
+        <div class="a">→</div>
+        <div class="n acc"><span class="t">FlowNormalizer</span><span class="d">strict 42-feature<br>contract</span></div>
+        <div class="a">→</div>
+        <div class="n"><span class="t">Redis stream</span><span class="d">producer / consumer<br>separate ACLs</span></div>
+        <div class="a">→</div>
+        <div class="n acc"><span class="t">Agent pipeline</span><span class="d">SecurityEvent<br>batches</span></div>
+      </div>
+      <div class="cols" style="flex:1">
+        <div class="grow">
+          <div class="card">
+            <span class="h">Why a stream in the middle</span>
+            <p>Capture and analysis fail independently and run at different rates. The stream decouples them, and each side authenticates as its own Redis ACL user — the capture side cannot read the pipeline's keyspace.</p>
+          </div>
+          <div class="card">
+            <span class="h">A second telemetry path</span>
+            <p>Zeek <code>conn.log</code> fields are translated directly into CICIDS2017 features, so the platform interoperates with an existing sensor without running its own capture.</p>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="card good">
+            <span class="h">Capture is never a side effect of booting</span>
+            <p>The ingestion service is constructed at startup and deliberately <b>not started</b>. Beginning a packet capture is a privileged act that must be an explicit operator decision via <code>POST /ingestion/start</code>.</p>
+          </div>
+          <div class="card warn">
+            <span class="h">Known limitation</span>
+            <p>Inter-arrival-time statistics and TCP window features are unavailable from a default Zeek <code>conn.log</code> and are zero-filled on that path. The capture path via CICFlowMeter computes them properly.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">If asked whether it has been tested on live traffic: yes, on a local interface, and the honest caveat is that a lab network is not a production network. The domain shift question belongs on the limitations slide — do not pre-empt it here.</div>
+    </section>
+
+    <!-- ═══════════ 16 LEARNING ═══════════ -->
+    <section class="slide" data-tag="System">
+      <div class="kicker">Closing the loop</div>
+      <h2>The system cannot grade its own homework</h2>
+      <div class="cols">
+        <div class="grow">
+          <ul>
+            <li>A platform has no way to detect its own false positives by introspection — a confident wrong answer looks exactly like a confident right one.</li>
+            <li>Analyst feedback via <code>POST /learning/feedback</code> is therefore the highest-value input the system takes, and the only ground truth it ever receives after deployment.</li>
+            <li>The LearningAgent joins detections to feedback, computes precision, recall and false-positive rate over a time window, discovers recurring patterns, and produces ranked recommendations.</li>
+            <li><b>It recommends without executing.</b> Automated retraining is deliberately out of scope — the agent proposes, a human runs <code>train.py</code>.</li>
+          </ul>
+        </div>
+        <div class="grow">
+          <div class="card warn">
+            <span class="h">Why automated retraining was excluded</span>
+            <p>A feedback loop that retrains itself on its own outputs will drift, and drift in a security control is a silent failure. Nothing in this project measures that drift, so building the loop would have been irresponsible rather than ambitious.</p>
+          </div>
+          <div class="card">
+            <span class="h">What is persisted</span>
+            <p>Every detection, analysis, decision, response, approval and feedback record is written to a Qdrant + SQLite memory provider, so the learning window spans restarts.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">"Recommends without executing" is a design position, not a missing feature — present it that way. The strongest version of the argument: I can build the loop, but I cannot yet measure whether it is helping, so shipping it would be shipping an unmeasurable control.</div>
+    </section>
+
+    <!-- ═══════════ 17 VALIDATION ═══════════ -->
+    <section class="slide" data-tag="Validation">
+      <div class="kicker">Engineering validation</div>
+      <h2>How I know it does what I say</h2>
+      <div class="stats">
+        <div class="stat"><span class="v">446</span><span class="k">tests</span><span class="s">across 31 modules, all layers</span></div>
+        <div class="stat"><span class="v">29,353</span><span class="k">lines of python</span><span class="s">excluding vendored dependencies</span></div>
+        <div class="stat"><span class="v">42</span><span class="k">enforced features</span><span class="s">strict contract at every boundary</span></div>
+        <div class="stat"><span class="v">1</span><span class="k">served model</span><span class="s">named in the manifest, not inferred</span></div>
+      </div>
+      <div class="cols" style="flex:1">
+        <div class="grow">
+          <div class="card">
+            <span class="h">Reproducibility</span>
+            <p><code>manifest.json</code> records the dataset fingerprint, row cap, random seed, feature count, and the scikit-learn / NumPy / joblib versions the artifacts were pickled under — because a pickle that will not unpickle is not a result.</p>
+          </div>
+          <div class="card">
+            <span class="h">Validation at the boundaries</span>
+            <p>Pydantic v2 with <code>extra="forbid"</code> throughout. Cross-field validators enforce the invariants: a BENIGN detection cannot carry <code>is_anomaly=True</code>; severity must match the numeric risk band.</p>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="card good">
+            <span class="h">Tested where it matters</span>
+            <p>The response authorisation path — trust tiers, protected targets, approval resumption, idempotency — carries the densest test coverage in the project, because it is the only layer that acts on anything outside the process.</p>
+          </div>
+          <div class="card warn">
+            <span class="h">What is not validated</span>
+            <p>There is no benchmark against a second dataset, and no adversarial evaluation. Both are named in future work rather than glossed over.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">Do not oversell the test count — an examiner may ask what they cover. The honest summary: unit coverage across every layer, integration coverage of the graph and the response gates, and no end-to-end test that drives the FastAPI layer through a live capture. Say that before being asked.</div>
+    </section>
+
+    <!-- ═══════════ 18 LIMITATIONS ═══════════ -->
+    <section class="slide" data-tag="Limitations">
+      <div class="kicker">Threats to validity</div>
+      <h2>What this work does <em>not</em> establish</h2>
+      <div class="cols-3" style="flex:1;align-content:start">
+        <div class="card warn">
+          <span class="h">External validity</span>
+          <h4>One dataset, one network</h4>
+          <p>CICIDS2017 is a controlled 2017 capture. Nothing here demonstrates generalisation to a modern production network, and the domain shift is likely severe.</p>
+        </div>
+        <div class="card warn">
+          <span class="h">Coverage</span>
+          <h4>Seven classes, no infiltration</h4>
+          <p>The cleaned dataset has zero infiltration rows. Lateral movement and insider activity are undetectable by this model, not merely detected poorly.</p>
+        </div>
+        <div class="card warn">
+          <span class="h">Adversarial</span>
+          <h4>No evasion evaluation</h4>
+          <p>The model has not been tested against adversarial perturbation or deliberate feature manipulation. A flow-statistics classifier is a plausible target for both.</p>
+        </div>
+        <div class="card warn">
+          <span class="h">Rare classes</span>
+          <h4>BOTNET recall 0.74</h4>
+          <p>The served model's weakest class. Roughly one in four botnet C2 flows is missed — reported, not smoothed over.</p>
+        </div>
+        <div class="card warn">
+          <span class="h">Response</span>
+          <h4>Simulated executors only</h4>
+          <p>The authorisation architecture is complete and tested; no real containment has been performed against real infrastructure.</p>
+        </div>
+        <div class="card warn">
+          <span class="h">Learning</span>
+          <h4>Feedback-dependent</h4>
+          <p>The learning metrics are only as good as the analyst labels they consume. With no feedback, the LearningAgent reports nothing meaningful.</p>
+        </div>
+      </div>
+      <div class="note-src">Presenting limitations as a full slide with six items, unprompted, converts the examiner's hardest questions into confirmations. Deliver these at an even pace and do not hedge any of them — every one of these is a question you would rather answer on your own terms.</div>
+    </section>
+
+    <!-- ═══════════ 19 FUTURE ═══════════ -->
+    <section class="slide" data-tag="Future work">
+      <div class="kicker">Future work</div>
+      <h2>Ordered by what would change the conclusions</h2>
+      <div class="grow">
+        <table>
+          <thead><tr><th>Direction</th><th style="text-align:left">Why it matters</th><th>Effort</th></tr></thead>
+          <tbody>
+            <tr><td>Cross-dataset evaluation<br>CIC-IDS-2018, UNSW-NB15</td><td style="text-align:left">The only work that would test external validity. Currently the largest gap between what is claimed and what is shown.</td><td>Medium</td></tr>
+            <tr><td>Adversarial robustness evaluation</td><td style="text-align:left">Determines whether flow-statistics detection survives an attacker who knows the feature set.</td><td>High</td></tr>
+            <tr><td>Real containment integrations<br>firewall · EDR · SOAR</td><td style="text-align:left">The authorisation layer is built for it; it needs an authorised environment, not new architecture.</td><td>Medium</td></tr>
+            <tr><td>LLM-backed analysis engine</td><td style="text-align:left">The <code>AIEngine</code> protocol already abstracts it. Would improve analyst-facing explanation, not detection.</td><td>Medium</td></tr>
+            <tr><td>MITRE ATT&amp;CK technique mapping</td><td style="text-align:left">Turns a class label into an operational finding a SOC can act on.</td><td>High</td></tr>
+            <tr><td>Drift measurement, then closing the retraining loop</td><td style="text-align:left">The measurement must exist before the automation. In that order.</td><td>High</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note-src">Lead with cross-dataset evaluation and say plainly it is the largest gap. Volunteering your own most important missing experiment is more persuasive than any completed one on this list.</div>
+    </section>
+
+    <!-- ═══════════ 20 CONTRIBUTIONS ═══════════ -->
+    <section class="slide" data-tag="Conclusion">
+      <div class="kicker">Contributions</div>
+      <h2>What I claim, and what supports it</h2>
+      <div class="grow" style="gap:13px">
+        <div class="card good">
+          <span class="h">Claim 1 — empirical</span>
+          <h4>On CICIDS2017, support-weighted metrics cannot distinguish a model that detects every attack family from one blind to the rarest.</h4>
+          <p><b>Evidence:</b> three of four trained models exceed 0.99 weighted F1 with 0.077–0.100 recall on WEBATTACK. Weighted F1 separates the four models by 0.005; macro F1 separates them by 0.124.</p>
+        </div>
+        <div class="card good">
+          <span class="h">Claim 2 — architectural</span>
+          <h4>A supervised classifier and a benign-trained anomaly layer can be combined so novel traffic surfaces as INCONCLUSIVE rather than being absorbed into BENIGN.</h4>
+          <p><b>Evidence:</b> dual detector with percentile-calibrated thresholds, OR-combined, wired into the detection status machine and covered by tests.</p>
+        </div>
+        <div class="card good">
+          <span class="h">Claim 3 — design</span>
+          <h4>The autonomy boundary can be enforced in code rather than described in policy — and enforcing it is what makes an aggressive detector safe to deploy.</h4>
+          <p><b>Evidence:</b> four-gate response path where every refusal is a recorded result, the decision engine cannot approve itself, and policy failure denies rather than permits.</p>
+        </div>
+      </div>
+      <div class="note-src">Close on claim 3 — it ties the aggressive anomaly layer to the conservative response layer and is the argument that makes this a systems project rather than a model-comparison exercise. Then thank the panel and stop talking.</div>
+    </section>
+
+    <!-- ═══════════ 21 THANKS ═══════════ -->
+    <section class="slide title" data-tag="Questions">
+      <div class="kicker">Thank you</div>
+      <h1>Questions<span>I have backup slides for the ones I expect.</span></h1>
+      <div class="meta">
+        <div><span>Finding 1</span><b>The metric trap</b></div>
+        <div><span>Finding 2</span><b>Built to refuse</b></div>
+        <div><span>Live demo</span><b>Simulation tab → Generate Attack</b></div>
+      </div>
+      <div class="note-src">If a demo is wanted: the Simulation tab replays a per-class median feature vector — derived from real labelled flows, never hand-written — through the genuine agent pipeline, and the dashboard shows the actual detection, decision and response. Make clear the profile is real data; the only synthetic part is the source IP.</div>
+    </section>
+
+    <!-- ═══════════ 22 BACKUP A ═══════════ -->
+    <section class="slide" data-tag="Backup">
+      <span class="backup-badge">Backup slide</span>
+      <div class="kicker">Anticipated question</div>
+      <h2>"Why did the DNN beat the ensemble? Ensembles usually win."</h2>
+      <div class="cols">
+        <div class="grow">
+          <div class="card">
+            <span class="h">The mechanism</span>
+            <p>Soft voting averages probability vectors. Two of the three base estimators — Random Forest and Gradient Boosting — are near-blind on WEBATTACK, assigning it very low probability. Averaging three vectors where two are confidently wrong <b>drags the correct one down</b>.</p>
+          </div>
+          <div class="card">
+            <span class="h">The evidence</span>
+            <p>The ensemble's WEBATTACK recall is 0.100 — between GB's 0.096 and RF's 0.077, and nowhere near the DNN's 0.953. It inherited the majority's blindness rather than the minority's sight.</p>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="card good">
+            <span class="h">The general lesson</span>
+            <p>Ensembling helps when base learners fail <em>independently</em>. Here RF and HistGB are both axis-aligned tree models trained on the same features and they fail the <em>same way</em> on the same rare class. The ensemble had no diversity to exploit on exactly the classes that mattered.</p>
+          </div>
+          <div class="card warn">
+            <span class="h">What I would do differently</span>
+            <p>Weight the vote by per-class competence rather than averaging uniformly, or drop base learners that fail the recall floor before ensembling at all. Both are straightforward; neither was needed once the DNN cleared the floor on its own.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">This is the most likely technical question in the whole defence. The independence argument is the real answer — have it ready in one sentence: ensembles need base learners that fail differently, and mine failed identically on the rare classes.</div>
+    </section>
+
+    <!-- ═══════════ 23 BACKUP B ═══════════ -->
+    <section class="slide" data-tag="Backup">
+      <span class="backup-badge">Backup slide</span>
+      <div class="kicker">Anticipated question</div>
+      <h2>"Isn't 99.7% accuracy just overfitting to CICIDS2017?"</h2>
+      <div class="cols">
+        <div class="grow">
+          <div class="card">
+            <span class="h">What rules out simple overfitting</span>
+            <p>The 20% test split is stratified and <b>held out before</b> scaling and balancing. The scaler is fitted on training rows only. The MLP uses early stopping on a further 10% internal validation split, so training stops before it memorises.</p>
+          </div>
+          <div class="card">
+            <span class="h">What the number actually means</span>
+            <p>99.7% accuracy is unremarkable here and I do not lead with it — a model predicting only the four majority classes reaches ~99%. The defensible figure is macro F1 <b>0.966</b>, which no trivial strategy achieves.</p>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="card warn">
+            <span class="h">What I cannot rule out</span>
+            <p><b>Dataset overfitting is a real and unaddressed risk.</b> CICIDS2017 was generated in a controlled testbed with scripted attacks. High in-distribution performance says little about a production network in 2026.</p>
+            <p>This is exactly why cross-dataset evaluation is the first item in future work. I would not deploy this model on a live network on the strength of these numbers alone.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">Distinguish the two senses of overfitting explicitly — overfitting the training split, which the methodology rules out, and overfitting the dataset, which it does not. Conceding the second cleanly is what makes the first credible.</div>
+    </section>
+
+    <!-- ═══════════ 24 BACKUP C ═══════════ -->
+    <section class="slide" data-tag="Backup">
+      <span class="backup-badge">Backup slide</span>
+      <div class="kicker">Anticipated question</div>
+      <h2>"Why LangGraph? Couldn't this be plain functions?"</h2>
+      <div class="cols">
+        <div class="grow">
+          <div class="card">
+            <span class="h">Honest answer first</span>
+            <p>Yes. Four sequential function calls would produce the same detection for a single event. For the linear case LangGraph buys very little, and I would not defend it on that case alone.</p>
+          </div>
+          <div class="card good">
+            <span class="h">What it buys once routing is conditional</span>
+            <p>The pipeline is not linear: a run carries N events at mixed stages, responses awaiting approval must be resumed later, and stalled stages must be excluded mid-run. That is a state machine with conditional edges, and expressing it as nested loops over mutable lists is where the bugs live.</p>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="card">
+            <span class="h">The concrete benefits taken</span>
+            <p><b>Append-only reducers</b> — no node can corrupt another's output.<br>
+               <b>Conditional edges</b> — routing policy is one pure, unit-testable function with no graph, no mocks.<br>
+               <b>State validation</b> — the whole run state is one Pydantic model, checked on entry and exit.</p>
+          </div>
+          <div class="card warn">
+            <span class="h">The cost</span>
+            <p>A dependency, a recursion limit to tune, and a graph that must be compiled before it can be executed. It is a real trade, not a free win.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">Opening with "yes, you could" disarms the question. The routing function being pure and testable without a graph is the strongest concrete point — it is the thing that would be hardest to keep clean in hand-rolled control flow.</div>
+    </section>
+
+    <!-- ═══════════ 25 BACKUP D ═══════════ -->
+    <section class="slide" data-tag="Backup">
+      <span class="backup-badge">Backup slide</span>
+      <div class="kicker">Anticipated question</div>
+      <h2>"How is the demo not just replaying hard-coded attacks?"</h2>
+      <div class="cols">
+        <div class="grow">
+          <div class="card warn">
+            <span class="h">It used to be — and that was a defect</span>
+            <p>An earlier version carried six hand-written attack dictionaries. Each supplied between 16 and 55 feature names against a model needing 42 specific ones, so every profile was partly zero-filled before it reached the classifier, and several supplied features the model does not use at all.</p>
+            <p>The demo was scoring fabricated vectors — the exact failure the strict flow normaliser exists to prevent.</p>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="card good">
+            <span class="h">What it does now</span>
+            <p>A separate script streams the labelled dataset and computes a <b>per-class median</b> over up to 50,000 real flows per class, covering all 42 features with no guessing about what a port scan "looks like" numerically.</p>
+            <p><b>Median, not mean:</b> these features are heavily skewed — Flow Bytes/s spans zero to 1e9 — so a mean lands on a value no real flow ever takes. A median is an actual point in the class.</p>
+          </div>
+          <div class="card">
+            <span class="h">Fail loudly</span>
+            <p>If the profile artifact is missing, the endpoint returns <b>503</b> rather than falling back to fabricated vectors. Only the source IP is synthetic.</p>
+          </div>
+        </div>
+      </div>
+      <div class="note-src">Volunteering that this was previously wrong is a strength, not a risk — it shows the artifacts were audited rather than trusted, and the median-versus-mean reasoning demonstrates you understand the feature distributions rather than just the API.</div>
+    </section>
+
+  </div>
+</div>
+
+<div id="help"><kbd>←→</kbd> slide · <kbd>N</kbd> notes · <kbd>F</kbd> full · <kbd>P</kbd> print</div>
+<div id="notes"><div class="h">Speaker notes</div><div class="b"></div></div>
+<div id="tip"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ── Scale the fixed stage to the viewport ─────────────────── */
+  var stage = document.getElementById("stage");
+  function fit() {
+    var pad = 40;
+    var s = Math.min((innerWidth - pad) / 1280, (innerHeight - pad) / 720);
+    stage.style.transform = "scale(" + s + ")";
+  }
+  addEventListener("resize", fit);
+  fit();
+
+  /* ── Deck navigation ───────────────────────────────────────── */
+  var slides = [].slice.call(document.querySelectorAll(".slide"));
+  var rail  = document.getElementById("rail");
+  var tag   = document.getElementById("tag");
+  var num   = document.getElementById("num");
+  var notes = document.getElementById("notes");
+  var nbody = notes.querySelector(".b");
+  var i = 0;
+
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (s, k) { s.classList.toggle("on", k === i); });
+    rail.style.width = ((i + 1) / slides.length * 100) + "%";
+    tag.innerHTML = "<b>" + (slides[i].dataset.tag || "") + "</b>";
+    num.textContent = String(i + 1).padStart(2, "0") + " / " + slides.length;
+    var src = slides[i].querySelector(".note-src");
+    nbody.textContent = src ? src.textContent.trim() : "No notes for this slide.";
+    location.hash = i + 1;
+  }
+
+  addEventListener("keydown", function (e) {
+    var k = e.key;
+    if (k === "ArrowRight" || k === "PageDown" || k === " ") { e.preventDefault(); show(i + 1); }
+    else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); show(i - 1); }
+    else if (k === "Home") { show(0); }
+    else if (k === "End") { show(slides.length - 1); }
+    else if (k === "n" || k === "N") { notes.classList.toggle("on"); }
+    else if (k === "f" || k === "F") {
+      if (document.fullscreenElement) { document.exitFullscreen(); }
+      else if (document.documentElement.requestFullscreen) { document.documentElement.requestFullscreen(); }
+    }
+    else if (k === "p" || k === "P") { print(); }
+  });
+
+  stage.addEventListener("click", function (e) {
+    show(e.clientX < innerWidth / 2 ? i - 1 : i + 1);
+  });
+
+  var start = parseInt((location.hash || "").slice(1), 10);
+  show(isNaN(start) ? 0 : start - 1);
+
+  /* ── Shared tooltip ────────────────────────────────────────── */
+  var tip = document.getElementById("tip");
+  function bindTip(el, html) {
+    el.addEventListener("mouseenter", function () { tip.innerHTML = html; tip.style.opacity = 1; });
+    el.addEventListener("mousemove", function (ev) {
+      tip.style.left = (ev.clientX + 14) + "px";
+      tip.style.top  = (ev.clientY - 34) + "px";
+    });
+    el.addEventListener("mouseleave", function () { tip.style.opacity = 0; });
+  }
+
+  var CAT1 = "#12a08f", CAT2 = "#bf8a28";
+  var NS = "http://www.w3.org/2000/svg";
+  function mk(t, a) {
+    var e = document.createElementNS(NS, t);
+    for (var k in a) { e.setAttribute(k, a[k]); }
+    return e;
+  }
+
+  /* ── Chart 1 · grouped bars, zero baseline ─────────────────── */
+  (function () {
+    var data = [
+      { m: "Random Forest",     w: 0.9924, x: 0.8414 },
+      { m: "Gradient Boosting", w: 0.9925, x: 0.8447 },
+      { m: "Voting Ensemble",   w: 0.9926, x: 0.8464 },
+      { m: "DNN — served",      w: 0.9970, x: 0.9655 }
+    ];
+    /* T leaves headroom for the value label above the tallest bar */
+    var W = 1080, H = 246, L = 46, R = 12, T = 26, B = 30;
+    var pw = W - L - R, ph = H - T - B;
+    var svg = mk("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
+      "aria-label": "Weighted F1 versus macro F1 for four supervised models" });
+
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (v) {
+      var y = T + ph - v * ph;
+      svg.appendChild(mk("line", { x1: L, x2: L + pw, y1: y, y2: y, class: v === 0 ? "base" : "grid" }));
+      var t = mk("text", { x: L - 10, y: y + 4, "text-anchor": "end", class: "ax" });
+      t.textContent = v.toFixed(2);
+      svg.appendChild(t);
+    });
+
+    var band = pw / data.length, bw = 46, gap = 2;
+    data.forEach(function (d, k) {
+      var cx = L + band * k + band / 2;
+      [{ v: d.w, c: CAT2, n: "Weighted F1", off: -(bw + gap) / 2 },
+       { v: d.x, c: CAT1, n: "Macro F1",    off:  (bw + gap) / 2 }].forEach(function (s) {
+        var h = s.v * ph, x = cx + s.off - bw / 2, y = T + ph - h;
+        var r = mk("rect", { x: x, y: y, width: bw, height: h, fill: s.c, rx: 4, ry: 4 });
+        bindTip(r, "<b>" + d.m + "</b><br><span class='m'>" + s.n + "</span> " + s.v.toFixed(4));
+        svg.appendChild(r);
+        var lb = mk("text", { x: cx + s.off, y: y - 7, "text-anchor": "middle", class: "vlab" });
+        lb.textContent = s.v.toFixed(3);
+        svg.appendChild(lb);
+      });
+      var nm = mk("text", { x: cx, y: H - 9, "text-anchor": "middle", class: "axl" });
+      nm.textContent = d.m;
+      svg.appendChild(nm);
+    });
+    document.getElementById("chart1").appendChild(svg);
+  })();
+
+  /* ── Chart 2 · dumbbell, per-class recall ──────────────────── */
+  (function () {
+    var rows = [
+      { c: "WEBATTACK",  a: 0.1002, b: 0.9534 },
+      { c: "BOTNET",     a: 0.6128, b: 0.7385 },
+      { c: "BRUTEFORCE", a: 1.0000, b: 0.9884 },
+      { c: "BENIGN",     a: 0.9995, b: 0.9951 },
+      { c: "DDOS",       a: 0.9999, b: 0.9996 },
+      { c: "DOS",        a: 0.9997, b: 0.9996 },
+      { c: "PORTSCAN",   a: 0.9995, b: 0.9993 }
+    ];
+    var W = 1080, L = 118, R = 66, T = 10, B = 26, rh = 30;
+    var ph = rows.length * rh, H = T + ph + B, pw = W - L - R;
+    var svg = mk("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
+      "aria-label": "Per-class recall, Voting Ensemble versus the served DNN" });
+    var X = function (v) { return L + v * pw; };
+
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (v) {
+      svg.appendChild(mk("line", { x1: X(v), x2: X(v), y1: T, y2: T + ph, class: v === 0 ? "base" : "grid" }));
+      var t = mk("text", { x: X(v), y: H - 8, "text-anchor": "middle", class: "ax" });
+      t.textContent = v.toFixed(2);
+      svg.appendChild(t);
+    });
+
+    rows.forEach(function (d, k) {
+      var y = T + rh * k + rh / 2;
+      var nm = mk("text", { x: L - 14, y: y + 4, "text-anchor": "end", class: "axl" });
+      nm.textContent = d.c;
+      svg.appendChild(nm);
+
+      var big = Math.abs(d.b - d.a) > 0.05;
+      svg.appendChild(mk("line", {
+        x1: X(d.a), x2: X(d.b), y1: y, y2: y,
+        stroke: big ? "#5b4a22" : "#24303f", "stroke-width": 2
+      }));
+
+      /* 2px surface ring keeps the marks readable where they overlap */
+      [{ v: d.a, c: CAT2, n: "Voting Ensemble" }, { v: d.b, c: CAT1, n: "DNN" }].forEach(function (s) {
+        var g = mk("circle", { cx: X(s.v), cy: y, r: 6.5, fill: s.c, stroke: "#141c26", "stroke-width": 2 });
+        bindTip(g, "<b>" + d.c + "</b><br><span class='m'>" + s.n + " recall</span> " + s.v.toFixed(4));
+        svg.appendChild(g);
+      });
+
+      /* Selective direct labels — only where the gap carries the story */
+      if (big) {
+        /* style, not a fill attribute — the .vlab class rule would win over it */
+        var la = mk("text", { x: X(d.a) - 12, y: y + 4, "text-anchor": "end", class: "vlab", style: "fill:" + CAT2 });
+        la.textContent = d.a.toFixed(2);
+        svg.appendChild(la);
+        var lb = mk("text", { x: X(d.b) + 12, y: y + 4, "text-anchor": "start", class: "vlab", style: "fill:" + CAT1 });
+        lb.textContent = d.b.toFixed(2);
+        svg.appendChild(lb);
+      }
+    });
+    document.getElementById("chart2").appendChild(svg);
+  })();
+})();
+</script>
+
+</body>
+</html>

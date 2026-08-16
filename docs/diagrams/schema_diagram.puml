@@ -1,0 +1,430 @@
+@startuml Cyber_Surakshya_Schema
+' ============================================================================
+'  Cyber Surakshya — Domain Schema Diagram
+'  Derived from cyber_surakshya/platform/schemas/, risk/, audit/, enums/
+'  All entities are Pydantic v2 models with extra="forbid" (strict mode).
+' ============================================================================
+
+!theme plain
+skinparam shadowing false
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor #FDFDFD
+  BorderColor #4A6FA5
+  ArrowColor #33475B
+}
+skinparam packageStyle rectangle
+hide circle
+
+title Cyber Surakshya — Domain Schema Diagram\n(Pydantic v2 entities, strict validation)
+
+' ====================================================== CORE PIPELINE ======
+package "Pipeline Entities (one per processing stage)" #F4F8FD {
+
+  entity SecurityEvent <<entity>> {
+    + event_id : UUID <<PK>>
+    --
+    # correlation_id : UUID <<FK>>
+    # trace_id : UUID <<FK>>
+    --
+    event_type : EventType
+    source : EventSource
+    severity : Severity
+    risk_score : RiskScore
+    title : str [1..512]
+    description : str? [..4096]
+    observed_at : datetime (UTC)
+    ingested_at : datetime (UTC)
+    network : NetworkEndpoint?
+    features : dict<str, float>
+    raw_payload : dict<str, Any>
+    labels : dict<str, str>
+    audit : AuditMetadata
+  }
+
+  entity DetectionResult <<entity>> {
+    + detection_id : UUID <<PK>>
+    --
+    # event_id : UUID <<FK>>
+    # correlation_id : UUID <<FK>>
+    # trace_id : UUID <<FK>>
+    --
+    status : DetectionStatus
+    severity : Severity
+    risk_score : RiskScore
+    model_name : str
+    model_version : str
+    predicted_label : str
+    confidence : float [0..1]
+    probabilities : dict<str, float>
+    is_anomaly : bool
+    benign_label : str = "BENIGN"
+    feature_snapshot : dict<str, float>
+    metadata : dict<str, Any>
+    detected_at : datetime (UTC)
+    audit : AuditMetadata
+  }
+
+  entity AnalysisResult <<entity>> {
+    + analysis_id : UUID <<PK>>
+    --
+    # detection_id : UUID <<FK>>
+    # event_id : UUID <<FK>>
+    # correlation_id : UUID <<FK>>
+    # trace_id : UUID <<FK>>
+    --
+    severity : Severity
+    risk_score : RiskScore
+    summary : str [1..1024]
+    reasoning : str [1..4096]
+    evidence : list<AnalysisEvidence>
+    confidence : float [0..1]
+    uncertainty : list<str>
+    metadata : dict<str, Any>
+    analyzed_at : datetime (UTC)
+    audit : AuditMetadata
+  }
+
+  entity DecisionResult <<entity>> {
+    + decision_id : UUID <<PK>>
+    --
+    # analysis_id : UUID <<FK>>
+    # detection_id : UUID <<FK>>
+    # event_id : UUID <<FK>>
+    # correlation_id : UUID <<FK>>
+    # trace_id : UUID <<FK>>
+    --
+    action : Action
+    priority : DecisionPriority
+    status : DecisionStatus
+    requires_approval : bool
+    approval_status : ApprovalStatus
+    rationale : str [1..2048]
+    confidence : float [0..1]
+    policy_name : str
+    policy_version : str
+    decision_engine : str
+    engine_version : str
+    decision_duration_ms : float
+    memory_hits : int
+    metadata : dict<str, Any>
+    decided_at : datetime (UTC)
+    audit : AuditMetadata
+  }
+
+  entity ResponseResult <<entity>> {
+    + response_id : UUID <<PK>>
+    --
+    # decision_id : UUID <<FK>>
+    # correlation_id : UUID <<FK>>
+    # trace_id : UUID <<FK>>
+    --
+    action : Action
+    original_action : Action
+    status : ResponseStatus
+    guard_verdict : GuardVerdict
+    guard_rule : str
+    guard_reason : str
+    engine_trust_tier : EngineTrustTier
+    decision_engine : str
+    executor_name : str?
+    executor_version : str?
+    idempotency_key : str <<UQ>>
+    attempts : list<ExecutionAttempt>
+    external_reference : str?
+    revert_token : str?
+    reverts_response_id : UUID? <<FK>>
+    duplicate_of_response_id : UUID? <<FK>>
+    response_duration_ms : float
+    executed_at : datetime (UTC)
+    expires_at : datetime?
+    metadata : dict<str, Any>
+    audit : AuditMetadata
+  }
+}
+
+' ================================================ PROJECTED / DERIVED ======
+package "Projected View" #FFF8F0 {
+  entity Alert <<projection>> {
+    + alert_id : UUID <<PK>>
+    --
+    # correlation_id : UUID <<FK>>
+    # trace_id : UUID <<FK>>
+    --
+    status : AlertStatus
+    severity : Severity
+    risk_score : RiskScore
+    title : str [1..512]
+    description : str? [..4096]
+    event_ids : list<UUID> <<FK>>
+    detection_ids : list<UUID> <<FK>>
+    recommended_actions : list<str>
+    assigned_to : str?
+    opened_at : datetime (UTC)
+    updated_at : datetime (UTC)
+    resolved_at : datetime?
+    labels : dict<str, str>
+    audit : AuditMetadata
+  }
+  note bottom of Alert
+    **Not persisted as its own collection.**
+    api/projections.py builds Alert payloads
+    on read from stored DetectionResult and
+    AnalysisResult records.
+  end note
+}
+
+' ================================================== LEARNING ENTITIES ======
+package "Learning & Feedback" #F5FBF4 {
+
+  entity AnalystFeedback <<entity>> {
+    + feedback_id : UUID <<PK>>
+    --
+    # detection_id : UUID <<FK>>
+    # decision_id : UUID? <<FK>>
+    --
+    verdict : AnalystVerdict
+    analyst : str [1..256]
+    notes : str? [..2048]
+    predicted_label : str?
+    actual_label : str?
+    metadata : dict<str, Any>
+    recorded_at : datetime (UTC)
+  }
+
+  entity LearningReport <<entity>> {
+    + report_id : UUID <<PK>>
+    --
+    total_incidents : int
+    complete_incidents : int
+    labeled_incidents : int
+    feedback_coverage : float [0..1]
+    window_start : datetime?
+    window_end : datetime?
+    metrics : list<MetricSummary>
+    patterns : list<Pattern>
+    recommendations : list<Recommendation>
+  }
+
+  class MetricSummary <<value object>> {
+    name : str
+    value : float?
+    unit : str = "ratio"
+    sample_size : int
+    sufficient_data : bool
+    detail : str?
+  }
+
+  class Pattern <<value object>> {
+    pattern_type : PatternType
+    summary : str
+    occurrences : int
+    entities : list<str>
+    first_seen : datetime?
+    last_seen : datetime?
+    confidence : float [0..1]
+    evidence : dict<str, Any>
+  }
+
+  class Recommendation <<value object>> {
+    recommendation_type : RecommendationType
+    priority : RecommendationPriority
+    summary : str
+    rationale : str
+    suggested_change : str
+    supporting_metric : str?
+    supporting_patterns : list<PatternType>
+    evidence : dict<str, Any>
+  }
+}
+
+' ===================================================== VALUE OBJECTS =======
+package "Shared Value Objects" #FAF7FD {
+
+  class RiskScore <<value object>> {
+    value : float [0..100]
+    level : RiskLevel?
+    rationale : str?
+    --
+    risk_level_from_score(v) : RiskLevel
+    severity_from_risk_score(v) : Severity
+  }
+
+  class AuditMetadata <<value object>> {
+    schema_version : str
+    created_at : datetime (UTC)
+    updated_at : datetime (UTC)
+    created_by : str
+    updated_by : str
+    source_system : str
+    tags : dict<str, str>
+  }
+
+  class NetworkEndpoint <<value object>> {
+    source_ip : str?
+    destination_ip : str?
+    source_port : int? [0..65535]
+    destination_port : int? [0..65535]
+    protocol : str? [..16]
+  }
+
+  class AnalysisEvidence <<value object>> {
+    source : str
+    name : str
+    value : str | int | float | bool
+    description : str?
+  }
+
+  class ExecutionAttempt <<value object>> {
+    attempt_number : int >= 1
+    succeeded : bool
+    started_at : datetime (UTC)
+    duration_ms : float
+    error_type : str?
+    error_message : str?
+  }
+}
+
+' ====================================================== ENUMERATIONS =======
+package "Enumerations" #FDF6F6 {
+  enum Severity {
+    INFO = 1
+    LOW = 2
+    MEDIUM = 3
+    HIGH = 4
+    CRITICAL = 5
+  }
+  enum RiskLevel {
+    NEGLIGIBLE
+    LOW
+    MODERATE
+    HIGH
+    CRITICAL
+  }
+  enum DetectionStatus {
+    BENIGN
+    DETECTED
+    INCONCLUSIVE
+  }
+  enum AlertStatus {
+    OPEN
+    ACKNOWLEDGED
+    RESOLVED
+    DISMISSED
+  }
+  enum DecisionStatus {
+    CREATED
+    APPROVED
+    REJECTED
+    EXECUTED
+  }
+  enum ApprovalStatus {
+    NOT_REQUIRED
+    PENDING
+    APPROVED
+    REJECTED
+  }
+  enum ResponseStatus {
+    EXECUTED
+    BLOCKED
+    PENDING_APPROVAL
+    FAILED
+    SKIPPED
+  }
+  enum GuardVerdict {
+    ALLOW
+    DENY
+    DOWNGRADE
+    REQUIRE_APPROVAL
+  }
+  enum EngineTrustTier {
+    TRUSTED
+    SUPERVISED
+    UNTRUSTED
+  }
+  enum AnalystVerdict {
+    TRUE_POSITIVE
+    FALSE_POSITIVE
+    FALSE_NEGATIVE
+    UNKNOWN
+  }
+}
+
+' ==================================================== RELATIONSHIPS ========
+
+' -- Pipeline chain (1:1 per processing stage) --
+SecurityEvent   "1" ---> "0..1" DetectionResult : classified as >
+DetectionResult "1" ---> "0..1" AnalysisResult  : interpreted as >
+AnalysisResult  "1" ---> "0..1" DecisionResult  : resolved to >
+DecisionResult  "1" ---> "0..1" ResponseResult  : executed as >
+
+' -- Projection --
+DetectionResult "1..*" ..> "1" Alert : projected into >
+AnalysisResult  "0..*" ..> "1" Alert : enriches >
+
+' -- Learning --
+DetectionResult "1" ---> "0..*" AnalystFeedback : labelled by >
+DecisionResult  "1" ---> "0..*" AnalystFeedback : labelled by >
+AnalystFeedback "0..*" ..> "1" LearningReport : aggregated into >
+LearningReport *-- "0..*" MetricSummary
+LearningReport *-- "0..*" Pattern
+LearningReport *-- "0..*" Recommendation
+
+' -- Value object composition --
+SecurityEvent   *-- "1" RiskScore
+SecurityEvent   *-- "1" AuditMetadata
+SecurityEvent   *-- "0..1" NetworkEndpoint
+DetectionResult *-- "1" RiskScore
+DetectionResult *-- "1" AuditMetadata
+AnalysisResult  *-- "1" RiskScore
+AnalysisResult  *-- "1" AuditMetadata
+AnalysisResult  *-- "0..*" AnalysisEvidence
+DecisionResult  *-- "1" AuditMetadata
+ResponseResult  *-- "1" AuditMetadata
+ResponseResult  *-- "0..*" ExecutionAttempt
+Alert           *-- "1" RiskScore
+Alert           *-- "1" AuditMetadata
+
+' -- Enum usage (representative) --
+RiskScore ..> RiskLevel
+DetectionResult ..> DetectionStatus
+DetectionResult ..> Severity
+DecisionResult ..> DecisionStatus
+DecisionResult ..> ApprovalStatus
+ResponseResult ..> ResponseStatus
+ResponseResult ..> GuardVerdict
+ResponseResult ..> EngineTrustTier
+Alert ..> AlertStatus
+AnalystFeedback ..> AnalystVerdict
+
+' ------------------------------------------------------------- NOTES ------
+note as N_INVARIANTS
+  **Cross-field invariants (Pydantic model_validator)**
+  1. severity must match the band implied by risk_score.value
+  2. status = BENIGN  =>  is_anomaly must be False
+  3. status = DETECTED  =>  predicted_label must not be the benign label
+  4. all *_id fields must be valid lowercase UUIDs
+  5. extra="forbid" — unknown fields are rejected, not ignored
+end note
+
+note as N_CORRELATION
+  **correlation_id / trace_id**
+  Carried unchanged through every entity in a
+  single pipeline run. They are the join key that
+  reassembles an incident across all collections.
+end note
+
+note as N_RISK
+  **RiskScore -> Severity mapping**
+  0.0-19.99   NEGLIGIBLE  -> INFO
+  20.0-39.99  LOW         -> LOW
+  40.0-59.99  MODERATE    -> MEDIUM
+  60.0-79.99  HIGH        -> HIGH
+  80.0-100.0  CRITICAL    -> CRITICAL
+end note
+
+N_INVARIANTS .. DetectionResult
+N_CORRELATION .. SecurityEvent
+N_RISK .. RiskScore
+
+@enduml

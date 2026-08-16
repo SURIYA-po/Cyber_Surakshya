@@ -17,7 +17,7 @@ No code changes in DecisionAgent or DecisionResult are needed.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from cyber_surakshya.platform.actions.action_type import ActionType
 from cyber_surakshya.platform.enums.detection_status import DetectionStatus

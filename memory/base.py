@@ -31,3 +31,12 @@ class MemoryProvider(Protocol):
 
     def exists(self, collection: str, record_id: str) -> bool:
         """Return True when the record exists in the collection."""
+
+    def count(self, collection: str) -> int:
+        """Return how many records a collection holds.
+
+        Separate from `search` because a caller that only needs a total should
+        not have to page the whole collection into memory to compute one. A
+        dashboard that counts a capped `search` result reports the page size,
+        not the truth.
+        """

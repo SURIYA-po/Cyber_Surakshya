@@ -57,7 +57,11 @@ class GraphRuntime:
             compiled = self.compile()
             output = compiled.invoke(
                 validated_input.to_graph_state(),
-                config={"recursion_limit": self.config.recursion_limit},
+                config={
+                    "recursion_limit": self.config.effective_recursion_limit(
+                        coordinated=self.builder.is_coordinated
+                    )
+                },
             )
             validated_output = PlatformStateModel.from_graph_state(output)
             self.persistence.save(effective_run_id, validated_output)

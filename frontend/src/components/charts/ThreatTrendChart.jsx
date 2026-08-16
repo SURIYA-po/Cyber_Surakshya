@@ -1,11 +1,15 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
-const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
+const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const EMPTY = <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:180,fontSize:12,color:"var(--text-secondary)"}}>No data — run a simulation</div>;
 
 export default function ThreatTrendChart({ stats }) {
-  if (!stats?.total_alerts) return EMPTY;
-  const today = new Date().getDay();
-  const data = DAYS.map((day,i) => ({ day, alerts: i===today ? stats.total_alerts : 0 }));
+  const trend = Array.isArray(stats?.trend) && stats.trend.length ? stats.trend : [];
+  if (!stats?.total_alerts && !trend.length) return EMPTY;
+
+  const data = trend.length
+    ? trend.map((point) => ({ day: point.label, alerts: Number(point.value) || 0 }))
+    : DAYS.map((day, i) => ({ day, alerts: i === 6 ? stats.total_alerts : 0 }));
+
   return (
     <ResponsiveContainer width="100%" height={180}>
       <AreaChart data={data}>

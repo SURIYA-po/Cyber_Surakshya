@@ -159,7 +159,7 @@ class DecisionResult(BaseModel):
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
-    def validate_approval_lifecycle(self) -> "DecisionResult":
+    def validate_approval_lifecycle(self) -> DecisionResult:
         """Enforce coherence between requires_approval and approval_status."""
         if self.requires_approval and self.approval_status == ApprovalStatus.AUTO_APPROVED:
             raise ValueError(

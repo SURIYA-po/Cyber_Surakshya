@@ -1,0 +1,76 @@
+@startuml Cyber_Surakshya_UseCase_Simple
+' ============================================================================
+'  Cyber Surakshya — Use Case Diagram (Simplified / Abstract View)
+'
+'  This is the high-level view intended for the report body: four actors and
+'  ten use cases expressed in plain language. The detailed, specification-level
+'  version is in usecase_diagram.puml.
+' ============================================================================
+
+!theme plain
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam nodesep 30
+skinparam ranksep 70
+skinparam usecase {
+  BackgroundColor #FDFDFD
+  BorderColor #4A6FA5
+  ArrowColor #33475B
+  FontSize 13
+}
+skinparam actor {
+  BackgroundColor #EEF3FA
+  BorderColor #4A6FA5
+  FontSize 13
+}
+
+title Cyber Surakshya — Use Case Diagram
+
+' ---------------------------------------------------------------- ACTORS ---
+actor "Network Sensor" as Sensor
+actor "SOC Analyst" as Analyst
+actor "Administrator" as Admin
+actor "Containment System\n(Firewall / Email)" as Executor
+
+' ============================================================== SYSTEM ======
+rectangle "Cyber Surakshya" {
+
+  usecase "Capture Network\nTraffic" as UC1
+  usecase "Detect Attacks" as UC2
+  usecase "Generate\nSecurity Alert" as UC3
+  usecase "View Alerts" as UC4
+  usecase "Investigate\nAlert Details" as UC5
+  usecase "Approve or Reject\nResponse Action" as UC6
+  usecase "Block the Threat" as UC7
+  usecase "Give Feedback\non a Detection" as UC8
+  usecase "View Performance\nReports" as UC9
+  usecase "Train and Update\nDetection Model" as UC10
+}
+
+' ------------------------------------------------------------ ACTOR LINKS --
+Sensor --> UC1
+
+Analyst --> UC4
+Analyst --> UC5
+Analyst --> UC6
+Analyst --> UC8
+Analyst --> UC9
+
+Admin --> UC10
+Admin --> UC9
+
+UC7 --> Executor
+
+' ------------------------------------------------------ RELATIONSHIPS ------
+UC1 .> UC2 : <<include>>
+UC2 .> UC3 : <<include>>
+UC5 .> UC4 : <<include>>
+
+UC7 .> UC2 : <<extend>>\n[threat confirmed]
+UC6 .> UC7 : <<extend>>\n[analyst approval\nrequired]
+UC9 .> UC8 : <<include>>
+
+' Layout is left to the renderer; declaration order above sets the flow.
+
+@enduml

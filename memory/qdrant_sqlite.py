@@ -5,18 +5,18 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Any
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, PointIdsList
+from qdrant_client.models import Distance, PointIdsList, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer
 
 from memory.base import MemoryProvider
 from memory.exceptions import (
     MemoryError,
-    MemoryRecordNotFoundError,
     MemoryRecordAlreadyExistsError,
+    MemoryRecordNotFoundError,
 )
 from memory.models import MemoryQuery, MemoryRecord, MemorySearchResult
 
@@ -48,10 +48,54 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
         except Exception as e:
             raise MemoryError(f"Failed to initialize databases: {e}")
 
+    # ── Connection handling ───────────────────────────────────────────────────
+
+    @contextmanager
+    def _connect(self):
+        """Yield a SQLite connection and always close it.
+
+        `with sqlite3.connect(path) as conn:` commits or rolls back on exit but
+        does NOT close the connection — a well-known gotcha. Every call here
+        used to leak an open handle, which on Windows keeps the database file
+        locked: `TemporaryDirectory` cleanup then failed with
+        `PermissionError: [WinError 32]`, producing 15 teardown errors across
+        the memory test suite, and `QdrantClient.__del__` raised at interpreter
+        shutdown for the same reason.
+        """
+        conn = sqlite3.connect(self._db_path)
+        try:
+            with conn:          # transaction scope: commit on success, rollback on error
+                yield conn
+        finally:
+            conn.close()        # handle scope: always released
+
+    def close(self) -> None:
+        """Release the Qdrant client. Idempotent.
+
+        SQLite connections are already per-operation and closed by `_connect`.
+        """
+        client = getattr(self, "_qdrant", None)
+        if client is None:
+            return
+        try:
+            client.close()
+        except Exception:
+            # Closing twice, or closing during interpreter shutdown, must not
+            # raise — this is called from fixtures and `__exit__`.
+            pass
+        finally:
+            self._qdrant = None
+
+    def __enter__(self) -> QdrantSqliteMemoryProvider:
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
     def _init_sqlite(self):
         """Initialize the SQLite schema."""
         with self._lock:
-            with sqlite3.connect(self._db_path) as conn:
+            with self._connect() as conn:
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS memory_records (
@@ -126,7 +170,7 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
             
             try:
                 # Save to SQLite
-                with sqlite3.connect(self._db_path) as conn:
+                with self._connect() as conn:
                     conn.execute(
                         "INSERT INTO memory_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         self._serialize_record(record)
@@ -155,7 +199,7 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
     def get(self, collection: str, record_id: str) -> MemoryRecord | None:
         with self._lock:
             try:
-                with sqlite3.connect(self._db_path) as conn:
+                with self._connect() as conn:
                     cursor = conn.execute(
                         "SELECT * FROM memory_records WHERE collection = ? AND record_id = ?",
                         (collection, record_id)
@@ -167,6 +211,26 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
             except sqlite3.Error as e:
                 raise MemoryError(f"SQLite error: {e}")
 
+    def count(self, collection: str) -> int:
+        """Return the exact number of records in a collection.
+
+        A SQL COUNT rather than len(search(...)): search is bounded by
+        MemoryQuery.limit, so counting its result reports the page size. That
+        is how the dashboard came to display a permanent "Total Alerts: 100"
+        while memory actually held 999 detections.
+        """
+        with self._lock:
+            try:
+                with self._connect() as conn:
+                    cursor = conn.execute(
+                        "SELECT COUNT(*) FROM memory_records WHERE collection = ?",
+                        (collection,),
+                    )
+                    row = cursor.fetchone()
+                    return int(row[0]) if row else 0
+            except sqlite3.Error as e:
+                raise MemoryError(f"SQLite error: {e}")
+
     def update(self, collection: str, record: MemoryRecord) -> MemoryRecord:
         with self._lock:
             if not self.exists(collection, record.record_id):
@@ -175,7 +239,7 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
             self._ensure_qdrant_collection(collection)
             
             try:
-                with sqlite3.connect(self._db_path) as conn:
+                with self._connect() as conn:
                     conn.execute(
                         """
                         UPDATE memory_records SET 
@@ -220,7 +284,7 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
                 
             self._ensure_qdrant_collection(collection)
             try:
-                with sqlite3.connect(self._db_path) as conn:
+                with self._connect() as conn:
                     conn.execute(
                         "DELETE FROM memory_records WHERE collection = ? AND record_id = ?",
                         (collection, record_id)
@@ -236,7 +300,7 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
     def exists(self, collection: str, record_id: str) -> bool:
         with self._lock:
             try:
-                with sqlite3.connect(self._db_path) as conn:
+                with self._connect() as conn:
                     cursor = conn.execute(
                         "SELECT 1 FROM memory_records WHERE collection = ? AND record_id = ?",
                         (collection, record_id)
@@ -333,7 +397,7 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
         sql += f" ORDER BY {order_col} {'DESC' if query.descending else 'ASC'}"
 
         try:
-            with sqlite3.connect(self._db_path) as conn:
+            with self._connect() as conn:
                 cursor = conn.execute(sql, params)
                 rows = cursor.fetchall()
         except sqlite3.Error as e:
@@ -344,9 +408,13 @@ class QdrantSqliteMemoryProvider(MemoryProvider):
         for row in rows:
             rec = self._deserialize_record(row)
 
-            if query.metadata:
-                if not all(rec.metadata.get(k) == v for k, v in query.metadata.items()):
-                    continue
+            # Delegated to MemoryQuery so this backend and
+            # InMemoryMemoryProvider cannot disagree about what `metadata` /
+            # `metadata_any` mean. Still applied after the SQL fetch and before
+            # the limit below, so `limit` continues to bound the *matching*
+            # rows rather than the rows that were read.
+            if not query.matches_metadata(rec.metadata):
+                continue
 
             if query.tags:
                 if not all(tag in rec.tags for tag in query.tags):

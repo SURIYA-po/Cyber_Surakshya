@@ -1,0 +1,84 @@
+# Response policy — the authorisation rules ResponseAgent enforces before
+# any action reaches an executor.
+#
+# This file is DATA. Enabling an AI decision engine, protecting a new subnet,
+# or tightening blast radius is a YAML edit — no Python change.
+#
+# A missing or unreadable file yields the built-in fail-closed defaults in
+# agents/response/config.py. The fallback is never more permissive than this.
+
+dry_run: false                # global kill-switch; true forces every action to DRY_RUN
+
+# ── Engine trust (agents/response/trust.py) ──────────────────────────────────
+# Maps DecisionResult.decision_engine to a trust tier. An engine that is not
+# listed resolves to UNKNOWN and is always downgraded — adding a new engine is
+# an explicit, auditable act.
+engine_trust:
+  DeterministicDecisionEngine: DETERMINISTIC
+  # OllamaDecisionEngine:      AI_SUPERVISED   # uncomment when the LLM engine is wired
+  # ClaudeDecisionEngine:      AI_SUPERVISED
+  # GPTDecisionEngine:         AI_SUPERVISED
+
+trust_tiers:
+  DETERMINISTIC:
+    destructive_allowed: true
+    min_confidence: 0.70
+  AI_SUPERVISED:              # default for every language-model engine
+    destructive_allowed: false
+    min_confidence: 0.90
+  AI_AUTONOMOUS:              # opt-in only; requires a validated model
+    destructive_allowed: true
+    min_confidence: 0.95
+  UNKNOWN:                    # unreachable threshold — always downgrades
+    destructive_allowed: false
+    min_confidence: 1.01
+
+# ── Action classification ────────────────────────────────────────────────────
+# Verbs that change the state of the network, an endpoint, or an identity.
+# Everything not listed here is non-destructive and may be executed by any
+# tier, which is what keeps an AI_SUPERVISED engine useful rather than inert.
+destructive_actions:
+  - BLOCK_IP
+  - ISOLATE_HOST
+  - TERMINATE_PROCESS
+  - QUARANTINE_FILE
+  - REVOKE_CREDENTIALS
+  - RATE_LIMIT
+
+# Substitute applied when the guard downgrades a destructive action.
+downgrade_action: NOTIFY_SOC
+
+# ── Protected targets ────────────────────────────────────────────────────────
+# Acting on these is denied outright, regardless of engine or approval.
+protected_targets:
+  cidrs:
+    - "127.0.0.0/8"           # loopback
+    - "169.254.0.0/16"        # link-local
+    - "224.0.0.0/4"           # multicast
+    - "255.255.255.255/32"    # broadcast
+    - "0.0.0.0/32"            # unspecified
+    - "::1/128"               # IPv6 loopback
+    - "fe80::/10"             # IPv6 link-local
+  hosts: []                   # operator-supplied: DNS, domain controllers, jump boxes
+  gateways_auto_detect: true  # add this host's own address and its /24 gateway
+
+# Asset criticality (populated later by AssetInventory via
+# ActionTarget.asset_criticality) that forces analyst approval.
+approval_required_asset_criticality:
+  - CRITICAL
+
+# ── Blast radius (§2.3) ──────────────────────────────────────────────────────
+# Bounds the damage a looping or hallucinating decision engine can cause.
+blast_radius:
+  max_destructive_per_correlation: 3
+  max_destructive_per_target_window_seconds: 900
+  global_destructive_per_minute: 10     # circuit breaker: downgrade + platform alert
+
+# ── Execution ────────────────────────────────────────────────────────────────
+idempotency_window_seconds: 900
+execution_timeout_seconds: 30
+max_retries: 2                          # transient executor errors only
+
+# Bounds on Action.parameters.duration_seconds for time-limited actions.
+min_action_duration_seconds: 60
+max_action_duration_seconds: 86400

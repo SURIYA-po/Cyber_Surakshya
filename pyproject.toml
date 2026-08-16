@@ -1,0 +1,95 @@
+# Tooling configuration. This project is not packaged for distribution; the
+# file exists so `ruff` has a home.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+exclude = [
+    ".venv",
+    "frontend",
+    "qdrant_db",
+    "artifacts",
+    "data",
+    # Vendored third-party source. Its style is upstream's business; the one
+    # local patch is documented in cicflowmeter/VENDOR.md.
+    "cicflowmeter",
+]
+
+[tool.ruff.lint]
+# Deliberately narrow. The rules below are the ones that catch *bugs* rather
+# than style opinions, chosen after a refactor where a missing `import json`
+# and a missing `import datetime` both reached runtime and only surfaced as a
+# 500 on a live endpoint:
+#
+#   F   pyflakes        undefined names, unused imports, shadowed bindings
+#   E9  syntax errors
+#   B   flake8-bugbear  mutable default args, `except` that swallows control flow
+#   UP  pyupgrade       dead compatibility shims
+#   I   isort           import ordering
+#
+# Formatting rules (E1/E2/E3/W) are excluded on purpose: this codebase uses
+# deliberate column alignment in its data tables and constant blocks, and
+# reflowing those would destroy readability for no correctness gain.
+select = ["F", "E4", "E7", "E9", "B", "UP", "I"]
+
+ignore = [
+    # `zip()` without `strict=` — the paired sequences here are built together
+    # and are the same length by construction.
+    "B905",
+    # Loop-variable binding in a closure. Flagged in plotting helpers where the
+    # closure is called immediately.
+    "B023",
+    # `Depends(...)` / `File(...)` in argument defaults IS the FastAPI idiom.
+    # The rule is right in general and wrong for every endpoint in this repo.
+    "B008",
+    # `raise X from exc` inside `except`. Genuinely better for tracebacks, but
+    # 22 existing sites and no autofix; the messages already carry the original
+    # error text. Worth a dedicated pass, not a drive-by one.
+    "B904",
+    # `datetime.timezone.utc` -> `datetime.UTC`. 74 sites across every agent,
+    # zero correctness gain, and `timezone.utc` reads fine. Pure churn.
+    "UP017",
+    # `class X(str, Enum)` -> `StrEnum`. Changes how members stringify, which
+    # these enums are serialised through. A behaviour change disguised as a
+    # lint fix.
+    "UP042",
+    # `typing.X` -> `collections.abc.X`. The Protocol definitions read more
+    # clearly with the typing spellings they were written against.
+    "UP035",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests intentionally import modules for their side effects and use fixtures
+# that shadow outer names.
+"tests/*" = ["F811", "F401"]
+# The training and inference scripts are procedural, top-to-bottom pipelines;
+# module-level imports after constants are deliberate there.
+#
+# E702 (statements joined by ';') is allowed in train.py for one reason: the
+# NumpyAutoencoder weight initialisation writes each layer's weight and bias on
+# one aligned line, so the network's shape is readable as a block:
+#
+#     self.W1 = _xavier(d, h);  self.b1 = np.zeros((1, h), ...)
+#     self.W2 = _xavier(h, e);  self.b2 = np.zeros((1, e), ...)
+#
+# Splitting those doubles the block's height and hides the symmetry.
+"train.py" = ["E402", "E702"]
+"inference.py" = ["E402"]
+"preprocess.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "adapters",
+    "agents",
+    "ai_engine",
+    "api",
+    "cyber_surakshya",
+    "graph",
+    "inference",
+    "ingestion",
+    "memory",
+    "observability",
+    "preprocess",
+    "train",
+]

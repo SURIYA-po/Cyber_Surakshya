@@ -1,0 +1,176 @@
+@startuml Cyber_Surakshya_UseCase
+' ============================================================================
+'  Cyber Surakshya — Use Case Diagram
+'  Derived from api/routers/*.py, agents/*, ingestion/*, api/security.py
+'
+'  Scope note: this diagram models WHAT actors can achieve with the system.
+'  The internal agent-to-agent processing chain is deliberately shown as a
+'  single use case ("Process Flow Through Detection Pipeline") — decomposing
+'  it into internal steps would be functional decomposition, not use cases.
+'  That chain is documented separately in the sequence/activity diagrams.
+' ============================================================================
+
+!theme plain
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam nodesep 20
+skinparam ranksep 40
+skinparam usecase {
+  BackgroundColor #FDFDFD
+  BorderColor #4A6FA5
+  ArrowColor #33475B
+}
+skinparam actor {
+  BackgroundColor #EEF3FA
+  BorderColor #4A6FA5
+}
+
+title Cyber Surakshya — Multi-Agent Intrusion Detection & Response Platform\nUse Case Diagram
+
+' ---------------------------------------------------------------- ACTORS ---
+actor "SOC Analyst" as Analyst
+actor "Security Engineer" as Engineer
+actor "ML Engineer" as MLEngineer
+
+actor "Network Sensor\n(CICFlowMeter / Zeek)" as Sensor << external >>
+actor "Containment Executor\n(Firewall / EDR / Notifier)" as Executor << external >>
+actor "Monitoring System\n(Prometheus)" as Monitor << external >>
+
+' ============================================================== SYSTEM ======
+rectangle "Cyber Surakshya Platform" {
+
+  package "Traffic Ingestion" as P1 {
+    usecase "Start / Stop\nLive Packet Capture" as UC_CAPTURE
+    usecase "Inspect Network Interfaces\n& Run Preflight Check" as UC_IFACE
+    usecase "Upload Zeek conn.log\nor CICFlowMeter CSV" as UC_UPLOAD
+    usecase "Submit Flow Record\n(JSON API)" as UC_JSON
+  }
+
+  package "Detection & Triage" as P2 {
+    usecase "Process Flow Through\nDetection Pipeline" as UC_PIPELINE
+    usecase "Classify Flow\n(7-Class DNN)" as UC_CLASSIFY
+    usecase "Screen for Novel Anomalies\n(iForest + Autoencoder)" as UC_ANOM
+    usecase "Recall Similar\nHistorical Incidents" as UC_RECALL
+    usecase "Simulate Attack\nScenario" as UC_SIM
+  }
+
+  package "Alert Management" as P3 {
+    usecase "Monitor Live Alert Feed\n(SSE Stream)" as UC_FEED
+    usecase "Browse & Inspect Alerts\n(Confidence, Probabilities,\nReasoning)" as UC_ALERTS
+    usecase "Dismiss Alert" as UC_DISMISS
+    usecase "View Agent Status\n& Pipeline Statistics" as UC_STATUS
+  }
+
+  package "Response Supervision" as P4 {
+    usecase "Review Pending\nApprovals" as UC_PENDING
+    usecase "Approve Response\nAction" as UC_APPROVE
+    usecase "Reject Response\nAction" as UC_REJECT
+    usecase "Manage Blocked IPs\n(View / Unblock)" as UC_BLOCKED
+    usecase "Review Response Policy\n& Trust Tiers" as UC_POLICY
+  }
+
+  package "Learning & Feedback" as P5 {
+    usecase "Submit Analyst Verdict\n(TP / FP / FN)" as UC_FEEDBACK
+    usecase "Run Learning Analysis" as UC_LEARN
+    usecase "Review Metrics, Patterns\n& Recommendations" as UC_INSIGHTS
+  }
+
+  package "Administration & Model Lifecycle" as P6 {
+    usecase "Authenticate\n(X-API-Key)" as UC_AUTH
+    usecase "Check System Health" as UC_HEALTH
+    usecase "Expose Prometheus\nMetrics" as UC_PROM
+    usecase "Train & Evaluate\nCandidate Models" as UC_TRAIN
+    usecase "Publish Served Model\nvia Manifest" as UC_PUBLISH
+  }
+}
+
+' ------------------------------------------------------ LAYOUT HINTS ------
+' Force a 2 x 3 package grid instead of one very wide row.
+P1 -[hidden]down- P4
+P2 -[hidden]down- P5
+P3 -[hidden]down- P6
+
+' ======================================================= ACTOR LINKS ========
+
+' -- SOC Analyst : day-to-day operation
+Analyst --> UC_FEED
+Analyst --> UC_ALERTS
+Analyst --> UC_DISMISS
+Analyst --> UC_STATUS
+Analyst --> UC_PENDING
+Analyst --> UC_APPROVE
+Analyst --> UC_REJECT
+Analyst --> UC_BLOCKED
+Analyst --> UC_FEEDBACK
+Analyst --> UC_LEARN
+Analyst --> UC_INSIGHTS
+Analyst --> UC_UPLOAD
+Analyst --> UC_SIM
+
+' -- Security Engineer : deployment & configuration
+Engineer --> UC_CAPTURE
+Engineer --> UC_IFACE
+Engineer --> UC_POLICY
+Engineer --> UC_HEALTH
+
+' -- ML Engineer : offline model work
+MLEngineer --> UC_TRAIN
+MLEngineer --> UC_PUBLISH
+
+' -- External systems
+Sensor --> UC_JSON
+Sensor --> UC_CAPTURE
+UC_PIPELINE --> Executor : contains threat via
+Monitor --> UC_PROM
+
+' ==================================================== INCLUDE / EXTEND =====
+
+' All ingestion routes feed the same pipeline
+UC_CAPTURE .> UC_PIPELINE : <<include>>
+UC_UPLOAD  .> UC_PIPELINE : <<include>>
+UC_JSON    .> UC_PIPELINE : <<include>>
+UC_SIM     .> UC_PIPELINE : <<include>>
+
+' What the pipeline always does
+UC_PIPELINE .> UC_CLASSIFY : <<include>>
+UC_PIPELINE .> UC_ANOM     : <<include>>
+UC_PIPELINE .> UC_RECALL   : <<include>>
+
+' Authentication guards every operator-facing use case
+UC_UPLOAD  .> UC_AUTH : <<include>>
+UC_APPROVE .> UC_AUTH : <<include>>
+UC_LEARN   .> UC_AUTH : <<include>>
+
+' Conditional behaviour
+UC_PENDING  .> UC_PIPELINE : <<extend>>\n[trust tier requires\nhuman approval]
+UC_APPROVE  .> UC_PIPELINE : <<extend>>\n[analyst authorises\nexecution]
+UC_INSIGHTS .> UC_FEEDBACK : <<include>>\n[accuracy metrics\nneed analyst labels]
+
+' ------------------------------------------------------------- NOTES ------
+note right of UC_PIPELINE
+  Single use case by design. Internally this is a
+  six-agent LangGraph loop (Coordinator, Detection,
+  Analysis, Decision, Response, Learning), but from
+  an actor's viewpoint it is one indivisible service.
+end note
+
+note bottom of UC_ALERTS
+  Alerts have no dedicated storage collection.
+  api/projections.py derives them on read from
+  the "detections" and "analysis" collections.
+end note
+
+note bottom of UC_LEARN
+  LearningAgent recommends only — it never
+  retrains or reconfigures the system
+  automatically. A human applies any change.
+end note
+
+note bottom of UC_PENDING
+  Actions from low-trust decision engines are
+  never auto-executed. ActionGuard and
+  EngineTrustPolicy route them to this queue.
+end note
+
+@enduml

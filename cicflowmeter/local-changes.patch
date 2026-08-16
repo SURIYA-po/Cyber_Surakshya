@@ -1,0 +1,43 @@
+diff --git a/src/cicflowmeter/sniffer.py b/src/cicflowmeter/sniffer.py
+index 3f6d7a3..e5e448c 100644
+--- a/src/cicflowmeter/sniffer.py
++++ b/src/cicflowmeter/sniffer.py
+@@ -49,17 +49,28 @@ def create_sniffer(
+ 
+     _start_periodic_gc(session, interval=GC_INTERVAL)
+ 
++    # LOCAL PATCH (Cyber Surakshya): upstream passes
++    # filter="ip and (tcp or udp)" to both AsyncSniffer calls.
++    #
++    # scapy compiles a BPF filter string by shelling out to `tcpdump`, which is
++    # not present on Windows. With the filter set, create_sniffer raises before
++    # a single packet is read, so PcapProcessor logs "pcap_extract_failed" for
++    # every capture file and the live pipeline silently receives no flows.
++    #
++    # Non-IP and non-TCP/UDP packets are instead dropped by FlowSession.process,
++    # which already ignores anything without an IP layer, so removing the filter
++    # costs a little parsing work but changes no output.
++    #
++    # Do not re-add the filter without providing tcpdump on every target host.
+     if input_file:
+         sniffer = AsyncSniffer(
+             offline=input_file,
+-            filter="ip and (tcp or udp)",
+             prn=session.process,
+             store=False,
+         )
+     else:
+         sniffer = AsyncSniffer(
+             iface=input_interface,
+-            filter="ip and (tcp or udp)",
+             prn=session.process,
+             store=False,
+         )
+@@ -116,7 +127,6 @@ def process_directory_merged(input_dir, output_dir, fields=None, verbose=False):
+         try:
+             sniffer = AsyncSniffer(
+                 offline=str(pcap_file),
+-                filter="ip and (tcp or udp)",
+                 prn=session.process,
+                 store=False,
+             )

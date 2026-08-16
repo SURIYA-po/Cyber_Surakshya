@@ -9,6 +9,8 @@ from adapters.detection.ids_adapter import IDSDetectionAdapter
 from cyber_surakshya.platform.schemas.detection_result import DetectionResult
 from cyber_surakshya.platform.schemas.security_event import SecurityEvent
 from cyber_surakshya.platform.state import PlatformSharedState, PlatformStateModel
+from memory.base import MemoryProvider
+from memory.models import MemoryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +27,11 @@ class DetectionAgent:
         self,
         ids_adapter: IDSDetectionAdapter,
         *,
+        memory_provider: MemoryProvider | None = None,
         agent_name: str = "detection_agent",
     ) -> None:
         self.ids_adapter = ids_adapter
+        self.memory_provider = memory_provider
         self.agent_name = agent_name
 
     def __call__(self, state: PlatformSharedState) -> PlatformSharedState:
@@ -65,6 +69,7 @@ class DetectionAgent:
 
             detection = self.ids_adapter.detect(flow_data)
             detection = self._link_detection_to_state(detection, event, state_model)
+            self._store_memory(event, detection)
 
             logger.info(
                 "detection_agent_completed",
@@ -127,6 +132,87 @@ class DetectionAgent:
         )
         return DetectionResult.model_validate(data)
 
+    def _store_memory(
+        self,
+        event: SecurityEvent,
+        detection: DetectionResult,
+    ) -> None:
+        if self.memory_provider is None:
+            return
+        try:
+            record = MemoryRecord(
+                backend="qdrant_sqlite",
+                collection="detections",
+                record_type="detection_result",
+                entity_id=self._entity_id_for_event(event),
+                correlation_id=detection.correlation_id,
+                trace_id=detection.trace_id,
+                content={
+                    "event_id": event.event_id,
+                    "detection_id": detection.detection_id,
+                    "predicted_label": detection.predicted_label,
+                    "confidence": detection.confidence,
+                    "status": detection.status.value,
+                    # Stage timestamps make time-to-detect measurable by
+                    # LearningAgent. Without observed_at persisted here, MTTD
+                    # cannot be computed from history at all.
+                    "observed_at": event.observed_at.isoformat(),
+                    "ingested_at": event.ingested_at.isoformat(),
+                    "detected_at": detection.detected_at.isoformat(),
+                    "risk_score": detection.risk_score.value,
+                    # The band and the adapter's own explanation of how the
+                    # score was reached. Persisting the bare number alone left
+                    # the API with nothing to justify it, so the dashboard
+                    # re-derived its own bands and its own colour thresholds
+                    # and drifted from RISK_BANDS.
+                    "risk_level": (
+                        detection.risk_score.level.name
+                        if detection.risk_score.level
+                        else None
+                    ),
+                    "risk_rationale": detection.risk_score.rationale,
+                    # Both representations, under distinct keys. `severity` in
+                    # this record's *metadata* remains the IntEnum ordinal that
+                    # existing consumers read; the label is additive.
+                    "severity_label": detection.severity.name,
+                    "severity_value": detection.severity.value,
+                    # The unsupervised layer's verdict. BENIGN + is_anomaly is
+                    # the INCONCLUSIVE case: the reason a flow the classifier
+                    # called benign can still be worth an analyst's time.
+                    "is_anomaly": detection.is_anomaly,
+                    # Provenance. Which detector produced this, so an
+                    # assessment stays attributable once Zeek/Suricata/host
+                    # adapters write into the same collection.
+                    "detection_source": detection.metadata.get("adapter"),
+                    "model_name": detection.model_name,
+                    "model_version": detection.model_version,
+                },
+                metadata={
+                    "agent": self.agent_name,
+                    "severity": detection.severity.value,
+                    "severity_label": detection.severity.name,
+                    # The domain identifiers, in metadata so the read model can
+                    # query for a detection by its detection_id. The memory
+                    # primary key is a separate uuid, so without these a lookup
+                    # by detection_id could only be done by scanning.
+                    "detection_id": detection.detection_id,
+                    "event_id": event.event_id,
+                    "source": event.source.value,
+                },
+                tags=[self.agent_name, "detection"],
+            )
+            self.memory_provider.store("detections", record)
+        except Exception as exc:
+            logger.warning(
+                "detection_agent_memory_store_failed",
+                extra={"agent": self.agent_name, "error": str(exc)},
+            )
+
+    def _entity_id_for_event(self, event: SecurityEvent) -> str | None:
+        if event.network and event.network.source_ip:
+            return event.network.source_ip
+        return event.event_id
+
     def _success_update(
         self,
         state: PlatformStateModel,
@@ -144,6 +230,9 @@ class DetectionAgent:
             },
         )
         return PlatformSharedState(
+            correlation_id=state.correlation_id,
+            trace_id=state.trace_id,
+            session_id=state.session_id,
             detection_results=[detection],
             metadata=metadata,
         )
@@ -156,6 +245,9 @@ class DetectionAgent:
         reason: str,
     ) -> PlatformSharedState:
         return PlatformSharedState(
+            correlation_id=state.correlation_id,
+            trace_id=state.trace_id,
+            session_id=state.session_id,
             metadata=self._merged_metadata(
                 state,
                 {
@@ -164,7 +256,7 @@ class DetectionAgent:
                     "detection_count": len(state.detection_results),
                     "adapter": type(self.ids_adapter).__name__,
                 },
-            )
+            ),
         )
 
     def _error_update(
@@ -172,28 +264,45 @@ class DetectionAgent:
         state: PlatformSharedState,
         error: Exception,
     ) -> PlatformSharedState:
+        failure = {
+            "status": "failed",
+            "error_type": type(error).__name__,
+            "adapter": type(self.ids_adapter).__name__,
+        }
+        # `state` is the raw graph state, never a PlatformStateModel — the
+        # previous `isinstance(state, PlatformStateModel)` guard was therefore
+        # always False and nulled all three identifiers. The run then failed
+        # PlatformStateModel validation on the way out of the graph, so a
+        # single agent error took down the whole run instead of being
+        # recorded as one entry in `errors`.
         try:
             state_model = PlatformStateModel.from_graph_state(state)
-            metadata = self._merged_metadata(
-                state_model,
-                {
-                    "status": "failed",
-                    "error_type": type(error).__name__,
-                    "adapter": type(self.ids_adapter).__name__,
-                },
-            )
+            metadata = self._merged_metadata(state_model, failure)
+            correlation_id = state_model.correlation_id
+            trace_id = state_model.trace_id
+            session_id = state_model.session_id
         except Exception:
-            metadata = {
-                "detection_agent": {
-                    "status": "failed",
-                    "error_type": type(error).__name__,
-                    "adapter": type(self.ids_adapter).__name__,
-                }
-            }
-        return PlatformSharedState(
-            errors=[f"{self.agent_name}: {error}"],
-            metadata=metadata,
-        )
+            # State itself is unparseable. Fall back to the raw keys so the
+            # error still carries its correlation context where possible.
+            metadata = {self.agent_name: failure}
+            raw = state if isinstance(state, dict) else {}
+            correlation_id = raw.get("correlation_id")
+            trace_id = raw.get("trace_id")
+            session_id = raw.get("session_id")
+
+        update: PlatformSharedState = {
+            "errors": [f"{self.agent_name}: {error}"],
+            "metadata": metadata,
+        }
+        # Omitted rather than set to None: these are non-optional strings on
+        # PlatformStateModel, and LangGraph merges only the keys present.
+        if correlation_id is not None:
+            update["correlation_id"] = correlation_id
+        if trace_id is not None:
+            update["trace_id"] = trace_id
+        if session_id is not None:
+            update["session_id"] = session_id
+        return update
 
     def _merged_metadata(
         self,

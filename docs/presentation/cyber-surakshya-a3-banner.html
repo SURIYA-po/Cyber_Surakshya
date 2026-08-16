@@ -1,0 +1,821 @@
+<title>Cyber Surakshya — A3 Project Banner</title>
+<style>
+  /* ─────────────────────────────────────────────────────────────
+     Cyber Surakshya · A3 portrait project banner (297 × 420 mm)
+     Print-committed single palette: deep telemetry ink on cool
+     paper, Nepali crimson as the single accent, severity ladder
+     as the only other colour system.
+     ───────────────────────────────────────────────────────────── */
+
+  :root {
+    --paper:      #EDF0EF;
+    --card:       #FAFBFB;
+    --ink:        #0E1A1E;
+    --ink-2:      #43555B;
+    --ink-3:      #7B8B8F;
+    --rule:       #C6D0CE;
+    --rule-soft:  #DCE3E1;
+
+    --crimson:    #A8123C;
+    --teal:       #0D6A66;
+
+    --sev-info:   #6B7C82;
+    --sev-low:    #0D6A66;
+    --sev-med:    #B07503;
+    --sev-high:   #C64B14;
+    --sev-crit:   #A8123C;
+
+    --display: "Bahnschrift", "DIN Alternate", "Franklin Gothic Medium",
+               "Arial Narrow", "Helvetica Neue", sans-serif;
+    --body:    "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono:    "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #5A6668;
+    color: var(--ink);
+    font-family: var(--body);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ── screen preview shell ─────────────────────────────────── */
+  .hint {
+    max-width: 297mm;
+    margin: 10mm auto 5mm;
+    padding: 0 2mm;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: #E6ECEA;
+    letter-spacing: .02em;
+  }
+  .hint b { color: #fff; font-weight: 600; }
+
+  .stage { display: flex; justify-content: center; padding: 0 0 14mm; }
+  .fit { transform-origin: top center; }
+
+  /* ── the sheet ────────────────────────────────────────────── */
+  .sheet {
+    width: 297mm;
+    height: 420mm;
+    background: var(--paper);
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: 50mm 20mm 70mm 1fr 56mm 24mm 8mm;
+    gap: 4mm;
+    padding: 12mm 14mm;
+    box-shadow: 0 4mm 14mm rgba(0,0,0,.35);
+  }
+
+  /* ══ masthead ═════════════════════════════════════════════ */
+  .masthead {
+    background: var(--ink);
+    color: var(--paper);
+    display: grid;
+    grid-template-columns: 1fr 74mm;
+    padding: 5mm 6mm 0;
+    position: relative;
+  }
+  .eyebrow {
+    font-family: var(--display);
+    font-size: 3mm;
+    letter-spacing: .28em;
+    text-transform: uppercase;
+    color: #9FB2B4;
+    margin: 0 0 1.5mm;
+  }
+  .wordmark {
+    font-family: var(--display);
+    font-stretch: 87.5%;
+    font-weight: 700;
+    font-size: 21mm;
+    line-height: .86;
+    letter-spacing: -.005em;
+    margin: 0;
+    color: #FFFFFF;
+  }
+  .wordmark em {
+    font-style: normal;
+    color: var(--crimson);
+    /* crimson on ink needs lifting to stay legible under print */
+    color: #E8386A;
+  }
+  .thesis {
+    font-family: var(--display);
+    font-stretch: 87.5%;
+    font-size: 5.4mm;
+    line-height: 1.12;
+    margin: 2.2mm 0 0;
+    color: #DCE5E4;
+    max-width: 150mm;
+  }
+  .thesis span { color: #9FB2B4; }
+
+  .credits { border-left: .3mm solid #33474C; padding-left: 5mm; }
+  .credits h3 {
+    font-family: var(--display);
+    font-size: 2.9mm;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: #E8386A;
+    margin: 0 0 1.8mm;
+    font-weight: 600;
+  }
+  .credits ul { list-style: none; margin: 0 0 2.5mm; padding: 0; }
+  .credits li {
+    font-size: 3.5mm;
+    line-height: 1.42;
+    color: #F2F5F4;
+    font-weight: 600;
+    letter-spacing: .005em;
+  }
+  .credits .sup {
+    border-top: .25mm solid #33474C;
+    padding-top: 1.6mm;
+    font-size: 3.1mm;
+    color: #9FB2B4;
+  }
+  .credits .sup b { color: #F2F5F4; font-weight: 600; display: block; font-size: 3.5mm; }
+
+  /* severity ladder — the platform's real risk→severity mapping */
+  .ladder {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+  }
+  .ladder div {
+    height: 5.4mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.4mm;
+    font-family: var(--display);
+    font-size: 2.5mm;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: #fff;
+  }
+  .ladder div small {
+    font-family: var(--mono);
+    letter-spacing: 0;
+    font-size: 2.2mm;
+    opacity: .72;
+  }
+  .l1 { background: var(--sev-info); }
+  .l2 { background: var(--sev-low); }
+  .l3 { background: var(--sev-med); }
+  .l4 { background: var(--sev-high); }
+  .l5 { background: var(--sev-crit); }
+
+  /* ══ stat strip ═══════════════════════════════════════════ */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1mm;
+  }
+  .stat {
+    background: var(--card);
+    border: .25mm solid var(--rule);
+    border-top: 1mm solid var(--teal);
+    padding: 2.4mm 2.6mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .stat b {
+    font-family: var(--display);
+    font-stretch: 87.5%;
+    font-size: 7.4mm;
+    line-height: 1;
+    letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat span {
+    font-family: var(--display);
+    font-size: 2.6mm;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-top: 1.2mm;
+  }
+  .stat.hero { border-top-color: var(--crimson); }
+  .stat.hero b { color: var(--crimson); }
+
+  /* ══ generic panel ════════════════════════════════════════ */
+  .panel {
+    background: var(--card);
+    border: .25mm solid var(--rule);
+    padding: 3.6mm 4mm;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .panel > h2 {
+    font-family: var(--display);
+    font-stretch: 87.5%;
+    font-size: 4.6mm;
+    font-weight: 700;
+    margin: 0 0 .8mm;
+    letter-spacing: .005em;
+  }
+  .panel > h2 .n {
+    color: var(--crimson);
+    font-family: var(--mono);
+    font-size: 3mm;
+    letter-spacing: .1em;
+    margin-right: 2mm;
+    vertical-align: .4mm;
+  }
+  .panel > .lede {
+    font-size: 2.9mm;
+    line-height: 1.4;
+    color: var(--ink-3);
+    margin: 0 0 2.6mm;
+    padding-bottom: 2.2mm;
+    border-bottom: .25mm solid var(--rule-soft);
+  }
+
+  /* ══ row A ════════════════════════════════════════════════ */
+  .rowA { display: grid; grid-template-columns: 112mm 1fr; gap: 4mm; }
+
+  table { width: 100%; border-collapse: collapse; }
+  .obj td, .obj th { padding: 1.25mm 0; vertical-align: top; text-align: left; }
+  .obj th {
+    font-family: var(--display);
+    font-size: 2.5mm;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    border-bottom: .3mm solid var(--rule);
+    padding-bottom: 1.4mm;
+  }
+  .obj tr + tr td { border-top: .25mm solid var(--rule-soft); }
+  .obj .o {
+    font-family: var(--mono);
+    font-size: 2.7mm;
+    color: var(--teal);
+    padding-right: 2mm;
+    white-space: nowrap;
+  }
+  .obj .goal { font-size: 3mm; line-height: 1.32; font-weight: 600; }
+  .obj .goal em {
+    display: block;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 2.7mm;
+    color: var(--ink-3);
+    line-height: 1.3;
+  }
+  .obj .st { text-align: right; white-space: nowrap; padding-left: 2mm; }
+  .tag {
+    font-family: var(--display);
+    font-size: 2.4mm;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    padding: .7mm 1.6mm;
+    border: .25mm solid var(--teal);
+    color: var(--teal);
+    display: inline-block;
+  }
+  .tag.out { border-color: var(--ink-3); color: var(--ink-3); }
+
+  .feat { display: grid; grid-template-columns: 1fr 1fr; gap: 2.6mm 4mm; flex: 1; }
+  .feat article { display: flex; flex-direction: column; gap: .9mm; }
+  .feat h4 {
+    font-family: var(--display);
+    font-stretch: 87.5%;
+    font-size: 3.5mm;
+    margin: 0;
+    line-height: 1.1;
+    padding-left: 2.6mm;
+    border-left: .8mm solid var(--crimson);
+  }
+  .feat p {
+    margin: 0;
+    padding-left: 3.4mm;
+    font-size: 2.75mm;
+    line-height: 1.36;
+    color: var(--ink-2);
+  }
+  .feat code {
+    font-family: var(--mono);
+    font-size: 2.5mm;
+    color: var(--teal);
+  }
+
+  /* ══ architecture ═════════════════════════════════════════ */
+  .arch { min-height: 0; }
+  .arch svg { flex: 1; width: 100%; min-height: 0; }
+
+  /* ══ row C ════════════════════════════════════════════════ */
+  .rowC { display: grid; grid-template-columns: 1fr 96mm; gap: 4mm; }
+
+  .models { font-variant-numeric: tabular-nums; }
+  .models th {
+    font-family: var(--display);
+    font-size: 2.5mm;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    text-align: right;
+    padding: 0 0 1.4mm 2mm;
+    border-bottom: .3mm solid var(--rule);
+  }
+  .models th:first-child { text-align: left; padding-left: 0; }
+  .models td {
+    font-family: var(--mono);
+    font-size: 3mm;
+    text-align: right;
+    padding: 1.5mm 0 1.5mm 2mm;
+    border-top: .25mm solid var(--rule-soft);
+    color: var(--ink-2);
+  }
+  .models td:first-child {
+    text-align: left;
+    font-family: var(--body);
+    font-weight: 600;
+    font-size: 3mm;
+    color: var(--ink);
+    padding-left: 0;
+  }
+  .models tr.served td {
+    background: rgba(168,18,60,.06);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .models tr.served td:first-child::after {
+    content: "SERVED";
+    font-family: var(--display);
+    font-size: 2.2mm;
+    letter-spacing: .16em;
+    color: var(--crimson);
+    margin-left: 2mm;
+  }
+  .models .weak { color: var(--sev-high); }
+  .models .good { color: var(--teal); }
+
+  .note {
+    margin: 2.4mm 0 0;
+    font-size: 2.75mm;
+    line-height: 1.38;
+    color: var(--ink-2);
+    border-left: .8mm solid var(--sev-med);
+    padding-left: 2.6mm;
+  }
+  .note b { color: var(--ink); }
+
+  .bars { display: flex; flex-direction: column; gap: 1.9mm; flex: 1; justify-content: center; }
+  .bar { display: grid; grid-template-columns: 30mm 1fr 10mm; align-items: center; gap: 2mm; }
+  .bar span { font-size: 2.8mm; font-weight: 600; }
+  .bar .track { height: 4.2mm; background: var(--rule-soft); position: relative; }
+  .bar .fill { position: absolute; inset: 0 auto 0 0; background: var(--sev-high); }
+  .bar.win .fill { background: var(--teal); }
+  .bar b {
+    font-family: var(--mono);
+    font-size: 2.9mm;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ══ technologies ═════════════════════════════════════════ */
+  .tech { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm 5mm; padding: 3mm 4mm; }
+  .tech section { display: flex; flex-direction: column; gap: .8mm; }
+  .tech h5 {
+    font-family: var(--display);
+    font-size: 2.5mm;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--crimson);
+    margin: 0;
+    font-weight: 600;
+  }
+  .tech p {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 2.65mm;
+    line-height: 1.34;
+    color: var(--ink-2);
+  }
+
+  /* ══ footer ═══════════════════════════════════════════════ */
+  .foot {
+    border-top: .5mm solid var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4mm;
+    padding-top: 1.6mm;
+    font-family: var(--display);
+    font-size: 2.7mm;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .foot b { color: var(--ink); font-weight: 600; }
+  .foot .scope { color: var(--sev-med); }
+
+  @media print {
+    @page { size: A3 portrait; margin: 0; }
+    body { background: #fff; }
+    .hint { display: none; }
+    .stage { padding: 0; }
+    .fit { transform: none !important; }
+    .sheet { box-shadow: none; }
+  }
+</style>
+
+<div class="hint">
+  <b>PRINT SETUP —</b> Paper: <b>A3 portrait (297 × 420 mm)</b> · Scale: <b>100 % / Actual size</b> (do not "fit to page")
+  · Margins: <b>None</b> · Enable <b>background graphics</b>. The sheet below is drawn at exact millimetre dimensions,
+  so it also uploads straight to a flex-print shop as a PDF.
+</div>
+
+<div class="stage">
+<div class="fit" id="fit">
+<div class="sheet">
+
+  <!-- ══════════════ MASTHEAD ══════════════ -->
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">Bachelor's final-year major project · 2026</p>
+      <h1 class="wordmark">CYBER <em>SURAKSHYA</em></h1>
+      <p class="thesis">
+        A multi-agent intrusion detection <span>&amp;</span> response platform that classifies network flows,
+        explains what it found, decides what to do — <span>and then refuses to do it without an analyst.</span>
+      </p>
+    </div>
+
+    <div class="credits">
+      <h3>Participants</h3>
+      <ul>
+        <li>Surya Pokhrel</li>
+        <li>Prakanda Sapkota</li>
+        <li>Sandesh Pokhrel</li>
+        <li>Bikram Thapa</li>
+      </ul>
+      <div class="sup">Supervisor<b>Suman Dahal</b></div>
+    </div>
+
+    <div class="ladder">
+      <div class="l1">Info <small>0–19</small></div>
+      <div class="l2">Low <small>20–39</small></div>
+      <div class="l3">Medium <small>40–59</small></div>
+      <div class="l4">High <small>60–79</small></div>
+      <div class="l5">Critical <small>80–100</small></div>
+    </div>
+  </header>
+
+  <!-- ══════════════ STAT STRIP ══════════════ -->
+  <div class="stats">
+    <div class="stat"><b>2,520,751</b><span>CICIDS2017 flows</span></div>
+    <div class="stat"><b>42</b><span>Selected features</span></div>
+    <div class="stat"><b>7</b><span>Traffic classes</span></div>
+    <div class="stat hero"><b>0.966</b><span>Macro F1 · served</span></div>
+    <div class="stat"><b>6</b><span>Coordinated agents</span></div>
+    <div class="stat"><b>29,353</b><span>Lines of code</span></div>
+    <div class="stat"><b>446</b><span>Automated tests</span></div>
+  </div>
+
+  <!-- ══════════════ ROW A ══════════════ -->
+  <div class="rowA">
+
+    <section class="panel">
+      <h2><span class="n">01</span>Objectives</h2>
+      <p class="lede">Six objectives, six deliverables — and one stated exclusion.</p>
+      <table class="obj">
+        <thead>
+          <tr><th colspan="2">Objective &amp; deliverable</th><th style="text-align:right">Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="o">O1</td>
+            <td class="goal">Reproducible ML pipeline over CICIDS2017<em>preprocess · train · versioned manifest</em></td>
+            <td class="st"><span class="tag">Met</span></td>
+          </tr>
+          <tr>
+            <td class="o">O2</td>
+            <td class="goal">Compare model families under an honest metric<em>four supervised models, macro-F1 with a recall floor</em></td>
+            <td class="st"><span class="tag">Met</span></td>
+          </tr>
+          <tr>
+            <td class="o">O3</td>
+            <td class="goal">Add unsupervised novelty detection<em>Isolation Forest + autoencoder, benign-only training</em></td>
+            <td class="st"><span class="tag">Met</span></td>
+          </tr>
+          <tr>
+            <td class="o">O4</td>
+            <td class="goal">Orchestrate detection → response as agents<em>LangGraph, six agents, coordinated work queue</em></td>
+            <td class="st"><span class="tag">Met</span></td>
+          </tr>
+          <tr>
+            <td class="o">O5</td>
+            <td class="goal">Ingest real traffic, not only dataset rows<em>capture → CICFlowMeter → Redis → pipeline</em></td>
+            <td class="st"><span class="tag">Met</span></td>
+          </tr>
+          <tr>
+            <td class="o">O6</td>
+            <td class="goal">Execute containment on production infrastructure<em>firewall / EDR / SOAR integrations — deliberately excluded</em></td>
+            <td class="st"><span class="tag out">Out of scope</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2><span class="n">02</span>What the system does differently</h2>
+      <p class="lede">Most intrusion-detection projects stop at a confusion matrix. The engineering here starts after the classifier is good.</p>
+      <div class="feat">
+        <article>
+          <h4>Hub &amp; spoke, not a chain</h4>
+          <p>Every agent returns to the <code>CoordinatorAgent</code>, which re-derives outstanding work from state. A linear chain processed one event per run and silently dropped the rest.</p>
+        </article>
+        <article>
+          <h4>Built to refuse</h4>
+          <p>Four independent gates stand between a decision and an action. Every refusal is stored as a result — verdict, rule and reason — never a silent no-op.</p>
+        </article>
+        <article>
+          <h4>Selection as an enforced rule</h4>
+          <p>The best model is chosen by macro F1 with a per-class recall floor, in code. Accuracy alone would have shipped a model blind to web attacks.</p>
+        </article>
+        <article>
+          <h4>Real traffic, not replayed rows</h4>
+          <p>Live capture is turned into 42-feature flows, published to a Redis stream with de-duplication, and drained into the agent pipeline in bounded batches.</p>
+        </article>
+        <article>
+          <h4>Novelty without a framework</h4>
+          <p>Isolation Forest plus an autoencoder hand-written in NumPy with manual backpropagation — no TensorFlow or PyTorch dependency.</p>
+        </article>
+        <article>
+          <h4>It cannot grade itself</h4>
+          <p>Accuracy metrics come from analyst feedback, not introspection. <code>LearningAgent</code> recommends improvements; humans apply them.</p>
+        </article>
+      </div>
+    </section>
+  </div>
+
+  <!-- ══════════════ ARCHITECTURE ══════════════ -->
+  <section class="panel arch">
+    <h2><span class="n">03</span>System architecture — packet to authorised response</h2>
+    <svg viewBox="0 0 1160 660" preserveAspectRatio="xMidYMid meet" role="img"
+         aria-label="Architecture: telemetry ingestion strip, a coordinator hub with four worker agents and a learning agent, and a four-gate authorisation chain ending in simulated executors.">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#43555B"/>
+        </marker>
+        <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#A8123C"/>
+        </marker>
+        <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#0D6A66"/>
+        </marker>
+        <style>
+          .bx  { fill:#FFFFFF; stroke:#C6D0CE; stroke-width:1.6; }
+          .ttl { font-family:"Bahnschrift","Arial Narrow",sans-serif; font-size:16px; font-weight:700; fill:#0E1A1E; }
+          .sub { font-family:"Cascadia Mono",Consolas,monospace; font-size:11.5px; fill:#7B8B8F; }
+          .lbl { font-family:"Bahnschrift","Arial Narrow",sans-serif; font-size:12px; letter-spacing:2.6px; fill:#7B8B8F; text-transform:uppercase; }
+          .cap { font-family:"Segoe UI",Arial,sans-serif; font-size:11.5px; fill:#43555B; }
+          .ln  { stroke:#43555B; stroke-width:1.6; fill:none; }
+          .lnc { stroke:#A8123C; stroke-width:1.8; fill:none; }
+          .lnd { stroke:#7B8B8F; stroke-width:1.4; fill:none; stroke-dasharray:5 4; }
+        </style>
+      </defs>
+
+      <!-- ── 01 TELEMETRY IN ── -->
+      <text class="lbl" x="4" y="14">01 — Telemetry in</text>
+      <g>
+        <rect class="bx" x="4"   y="26" width="176" height="52"/>
+        <text class="ttl" x="16" y="47">Live interface</text><text class="sub" x="16" y="65">dumpcap · host or docker</text>
+        <rect class="bx" x="200" y="26" width="176" height="52"/>
+        <text class="ttl" x="212" y="47">Rotating pcap</text><text class="sub" x="212" y="65">closed files · retention sweep</text>
+        <rect class="bx" x="396" y="26" width="176" height="52"/>
+        <text class="ttl" x="408" y="47">CICFlowMeter</text><text class="sub" x="408" y="65">packets → flow features</text>
+        <rect class="bx" x="592" y="26" width="176" height="52"/>
+        <text class="ttl" x="604" y="47">FlowNormalizer</text><text class="sub" x="604" y="65">strict 42-feature contract</text>
+        <rect class="bx" x="788" y="26" width="176" height="52"/>
+        <text class="ttl" x="800" y="47">Redis stream</text><text class="sub" x="800" y="65">at-least-once · de-duped</text>
+        <rect class="bx" x="984" y="26" width="172" height="52"/>
+        <text class="ttl" x="996" y="47">SecurityEvent</text><text class="sub" x="996" y="65">Pydantic-validated batch</text>
+
+        <path class="ln" d="M182 52 H196"  marker-end="url(#ah)"/>
+        <path class="ln" d="M378 52 H392"  marker-end="url(#ah)"/>
+        <path class="ln" d="M574 52 H588"  marker-end="url(#ah)"/>
+        <path class="ln" d="M770 52 H784"  marker-end="url(#ah)"/>
+        <path class="ln" d="M966 52 H980"  marker-end="url(#ah)"/>
+      </g>
+      <text class="cap" x="4" y="99">Batch replay accepted on the same contract — CSV feature files · Zeek <tspan font-family="Cascadia Mono, Consolas, monospace">conn.log</tspan> · REST JSON</text>
+
+      <!-- feed into the loop -->
+      <path class="lnc" d="M1070 78 V112 H570 V150" marker-end="url(#ahc)"/>
+
+      <!-- ── 02 AGENT LOOP ── -->
+      <text class="lbl" x="4" y="150">02 — Coordinated agent loop</text>
+
+      <!-- memory rail -->
+      <rect class="bx" x="4" y="168" width="180" height="248" fill="#F2F5F4"/>
+      <text class="ttl" x="16" y="192">Memory layer</text>
+      <text class="sub" x="16" y="212">Qdrant vectors</text>
+      <text class="sub" x="16" y="229">+ SQLite records</text>
+      <text class="cap" x="16" y="256">Every event, detection,</text>
+      <text class="cap" x="16" y="272">analysis, decision and</text>
+      <text class="cap" x="16" y="288">response is persisted</text>
+      <text class="cap" x="16" y="304">and semantically</text>
+      <text class="cap" x="16" y="320">recallable.</text>
+      <text class="sub" x="16" y="350" fill="#0D6A66">shared state</text>
+      <text class="cap" x="16" y="370">Append-only reducers.</text>
+      <text class="cap" x="16" y="386">No node can mutate</text>
+      <text class="cap" x="16" y="402">another's output.</text>
+
+      <!-- platform surface rail -->
+      <rect class="bx" x="976" y="168" width="180" height="248" fill="#F2F5F4"/>
+      <text class="ttl" x="988" y="192">Platform surface</text>
+      <text class="sub" x="988" y="212">FastAPI · X-API-Key</text>
+      <text class="cap" x="988" y="236">Server-sent live feed</text>
+      <text class="cap" x="988" y="252">of real platform events</text>
+      <text class="cap" x="988" y="276">Prometheus <tspan font-family="Cascadia Mono, Consolas, monospace">/metrics</tspan></text>
+      <text class="cap" x="988" y="300">Alert, response and</text>
+      <text class="cap" x="988" y="316">learning endpoints</text>
+      <text class="sub" x="988" y="346" fill="#0D6A66">react soc dashboard</text>
+      <text class="cap" x="988" y="366">Triage queue, approval</text>
+      <text class="cap" x="988" y="382">actions, live topology</text>
+      <text class="cap" x="988" y="398">and metric charts.</text>
+
+      <!-- hub -->
+      <rect x="452" y="248" width="236" height="84" fill="#0E1A1E"/>
+      <text x="570" y="278" text-anchor="middle" font-family="Bahnschrift, Arial Narrow, sans-serif"
+            font-size="20" font-weight="700" fill="#FFFFFF">COORDINATOR</text>
+      <text x="570" y="298" text-anchor="middle" class="sub" fill="#9FB2B4">routing hub · work queue</text>
+      <text x="570" y="316" text-anchor="middle" class="sub" fill="#9FB2B4">stall &amp; live-lock detection</text>
+
+      <!-- workers -->
+      <g>
+        <rect class="bx" x="212" y="176" width="212" height="72"/>
+        <text class="sub" x="226" y="196" fill="#A8123C">stage 1</text>
+        <text class="ttl" x="226" y="216">Detection</text>
+        <text class="sub" x="226" y="236">DNN + anomaly layer → label</text>
+
+        <rect class="bx" x="716" y="176" width="212" height="72"/>
+        <text class="sub" x="730" y="196" fill="#A8123C">stage 2</text>
+        <text class="ttl" x="730" y="216">Analysis</text>
+        <text class="sub" x="730" y="236">evidence · summary · doubt</text>
+
+        <rect class="bx" x="716" y="332" width="212" height="72"/>
+        <text class="sub" x="730" y="352" fill="#A8123C">stage 3</text>
+        <text class="ttl" x="730" y="372">Decision</text>
+        <text class="sub" x="730" y="392">action · priority · approval?</text>
+
+        <rect class="bx" x="212" y="332" width="212" height="72"/>
+        <text class="sub" x="226" y="352" fill="#A8123C">stage 4</text>
+        <text class="ttl" x="226" y="372">Response</text>
+        <text class="sub" x="226" y="392">executed — or refused</text>
+      </g>
+
+      <!-- hub ⇄ worker links -->
+      <path class="ln" d="M424 212 H452 V254" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <path class="ln" d="M716 212 H688 V254" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <path class="ln" d="M716 368 H688 V326" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <path class="ln" d="M424 368 H452 V326" marker-start="url(#ah)" marker-end="url(#ah)"/>
+
+      <!-- stage order arc -->
+      <path class="lnd" d="M430 168 H930" marker-end="url(#ah)"/>
+      <text class="cap" x="440" y="162" fill="#7B8B8F">the queue is drained stage by stage, breadth-first — never one event per run</text>
+
+      <!-- learning agent -->
+      <rect class="bx" x="440" y="358" width="260" height="58" stroke-dasharray="6 4"/>
+      <text class="ttl" x="452" y="380">Learning agent</text>
+      <text class="sub" x="452" y="398">outside the loop · recommends only</text>
+      <path class="lnd" d="M570 332 V354" marker-end="url(#ah)"/>
+      <path class="lnd" d="M184 292 H208"  marker-end="url(#ah)"/>
+      <path class="lnd" d="M700 388 H974"  marker-end="url(#ah)"/>
+      <text class="cap" x="712" y="382" fill="#7B8B8F">analyst feedback in,</text>
+      <text class="cap" x="712" y="398" fill="#7B8B8F">recommendations out</text>
+
+      <!-- ── 03 AUTHORISATION ── -->
+      <path class="lnc" d="M318 404 V430 H570 V462" marker-end="url(#ahc)"/>
+      <text class="lbl" x="4" y="452">03 — Authorisation · the system is built to refuse</text>
+
+      <g>
+        <rect class="bx" x="4"   y="470" width="204" height="66"/>
+        <text class="sub" x="16" y="490" fill="#A8123C">gate 1</text>
+        <text class="ttl" x="16" y="510">Rejection</text><text class="sub" x="16" y="528">an analyst said no</text>
+
+        <rect class="bx" x="228" y="470" width="204" height="66"/>
+        <text class="sub" x="240" y="490" fill="#A8123C">gate 2</text>
+        <text class="ttl" x="240" y="510">Approval</text><text class="sub" x="240" y="528">human-in-the-loop queue</text>
+
+        <rect class="bx" x="452" y="470" width="204" height="66"/>
+        <text class="sub" x="464" y="490" fill="#A8123C">gate 3</text>
+        <text class="ttl" x="464" y="510">Action guard</text><text class="sub" x="464" y="528">trust tier · blast radius</text>
+
+        <rect class="bx" x="676" y="470" width="204" height="66"/>
+        <text class="sub" x="688" y="490" fill="#A8123C">gate 4</text>
+        <text class="ttl" x="688" y="510">Idempotency</text><text class="sub" x="688" y="528">already executed?</text>
+
+        <rect x="900" y="470" width="256" height="66" fill="#FFFFFF" stroke="#0D6A66" stroke-width="2.4"/>
+        <text class="sub" x="914" y="490" fill="#0D6A66">execute</text>
+        <text class="ttl" x="914" y="510" fill="#0D6A66">Simulated executors</text>
+        <text class="sub" x="914" y="528">containment · notification</text>
+
+        <path class="ln" d="M210 503 H224" marker-end="url(#ah)"/>
+        <path class="ln" d="M434 503 H448" marker-end="url(#ah)"/>
+        <path class="ln" d="M658 503 H672" marker-end="url(#ah)"/>
+        <path class="ln" d="M882 503 H896" marker-end="url(#aht)"/>
+      </g>
+
+      <!-- refusal rail -->
+      <path class="lnc" d="M106 538 V566"/><path class="lnc" d="M330 538 V566"/>
+      <path class="lnc" d="M554 538 V566"/><path class="lnc" d="M778 538 V566"/>
+      <rect x="4" y="566" width="876" height="46" fill="#FBEEF2" stroke="#A8123C" stroke-width="1.6"/>
+      <text class="ttl" x="18" y="586" fill="#A8123C">Refused</text>
+      <text class="cap" x="18" y="604">Verdict, the rule that fired and the reason are recorded as a result — never a silent no-op. Awaiting-approval is resumable, not terminal.</text>
+      <text class="sub" x="900" y="586" fill="#43555B">ALLOW · DOWNGRADE</text>
+      <text class="sub" x="900" y="604" fill="#43555B">REQUIRE_APPROVAL · DENY</text>
+
+      <text class="cap" x="4" y="638" fill="#7B8B8F">The decision engine cannot approve itself: clearing the decision-level flag never substitutes for a human where the trust policy demands one. An unreadable policy file denies — it does not permit.</text>
+    </svg>
+  </section>
+
+  <!-- ══════════════ ROW C ══════════════ -->
+  <div class="rowC">
+
+    <section class="panel">
+      <h2><span class="n">04</span>Key results — and the trap in them</h2>
+      <p class="lede">Held-out test set of 100,088 flows. Every model reads ≈ 99 % accurate, because four classes are ≈ 99 % of the rows.</p>
+      <table class="models">
+        <thead>
+          <tr><th>Model</th><th>Accuracy</th><th>F1 wtd</th><th>F1 macro</th><th>Recall macro</th><th>Web-attack recall</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Random Forest</td><td>0.9942</td><td>0.9924</td><td>0.8414</td><td>0.8126</td><td class="weak">0.08</td></tr>
+          <tr><td>Gradient Boosting</td><td>0.9943</td><td>0.9925</td><td>0.8447</td><td>0.8153</td><td class="weak">0.10</td></tr>
+          <tr><td>Voting Ensemble</td><td>0.9943</td><td>0.9926</td><td>0.8464</td><td>0.8160</td><td class="weak">0.10</td></tr>
+          <tr class="served"><td>Deep Neural Network</td><td>0.9971</td><td>0.9970</td><td>0.9655</td><td>0.9534</td><td class="good">0.95</td></tr>
+        </tbody>
+      </table>
+      <p class="note">
+        <b>Read macro, not weighted.</b> The Voting Ensemble scores 0.9926 weighted F1 while catching one web attack in ten.
+        Selecting on accuracy would have shipped a model that is blind to the two rarest attack families — so selection is
+        enforced in code as macro F1 with a per-class recall floor.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2><span class="n">05</span>Web-attack recall</h2>
+      <p class="lede">The same four models, on the metric the weighted average hides.</p>
+      <div class="bars">
+        <div class="bar"><span>Random Forest</span><div class="track"><div class="fill" style="width:8%"></div></div><b>0.08</b></div>
+        <div class="bar"><span>Gradient Boosting</span><div class="track"><div class="fill" style="width:10%"></div></div><b>0.10</b></div>
+        <div class="bar"><span>Voting Ensemble</span><div class="track"><div class="fill" style="width:10%"></div></div><b>0.10</b></div>
+        <div class="bar win"><span>Deep Neural Net</span><div class="track"><div class="fill" style="width:95%"></div></div><b>0.95</b></div>
+      </div>
+      <p class="note" style="border-left-color:var(--teal)">
+        The served DNN — a 512 → 256 → 128 multilayer perceptron — also lifts botnet recall from 0.61 to <b>0.74</b>,
+        the weakest class that remains.
+      </p>
+    </section>
+  </div>
+
+  <!-- ══════════════ TECHNOLOGIES ══════════════ -->
+  <section class="panel tech">
+    <section><h5>ML core</h5><p>scikit-learn · pandas · NumPy · joblib · Matplotlib · CICIDS2017</p></section>
+    <section><h5>Agent orchestration</h5><p>LangGraph StateGraph · LangChain Core · Pydantic v2</p></section>
+    <section><h5>Live ingestion</h5><p>Scapy · CICFlowMeter · dumpcap · Redis Streams</p></section>
+    <section><h5>Memory &amp; state</h5><p>Qdrant · SQLite · sentence-transformers</p></section>
+    <section><h5>Service layer</h5><p>FastAPI · Uvicorn · server-sent events · Prometheus · Docker</p></section>
+    <section><h5>Interface</h5><p>React 18 · Vite · Tailwind CSS 4 · Recharts · Framer Motion</p></section>
+  </section>
+
+  <!-- ══════════════ FOOTER ══════════════ -->
+  <footer class="foot">
+    <div><b>Cyber Surakshya</b> — Nepali: cyber protection</div>
+    <div>Python · <b>29,353</b> LOC · <b>446</b> pytest cases</div>
+    <div class="scope">Scope: simulated executors only — no production firewall, EDR or SOAR is touched</div>
+  </footer>
+
+</div>
+</div>
+</div>
+
+<script>
+  // Fit the fixed-millimetre sheet inside the preview viewport. Print rules
+  // reset the transform so the sheet lands on the page at true A3 size.
+  (function () {
+    var fit = document.getElementById('fit');
+    var sheet = fit.firstElementChild;
+    function apply() {
+      var w = sheet.offsetWidth, h = sheet.offsetHeight;
+      var s = Math.min(1, (window.innerWidth - 48) / w);
+      fit.style.transform = 'scale(' + s + ')';
+      fit.style.height = (h * s) + 'px';
+      fit.style.width = w + 'px';
+    }
+    apply();
+    window.addEventListener('resize', apply);
+  })();
+</script>

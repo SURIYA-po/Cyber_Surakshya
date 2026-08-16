@@ -32,7 +32,7 @@ Cyber Surakshya aims to evolve from a standalone ML-based IDS into a full **mult
 |---|---|
 | CICIDS2017 preprocessing pipeline | ✅ Complete |
 | ML training (RF, GB, DNN, VotingEnsemble) | ✅ Complete |
-| Dual-layer Anomaly Detection (iforest + AE) | ✅ Complete |
+| Dual-layer Anomaly Detection (iforest + AE) | ✅ Complete — trained *and* wired into the agent path since 2026-08-02 |
 | Inference pipeline + Zeek conn.log bridge | ✅ Complete |
 | FastAPI REST backend | ✅ Complete |
 | Real ML Simulation & Live Feed (SSE) | ✅ Complete |
@@ -47,13 +47,24 @@ Cyber Surakshya aims to evolve from a standalone ML-based IDS into a full **mult
 | `DeterministicRuleEngine` (AI engine) | ✅ Complete |
 | `DecisionAgent` (LangGraph node) | ✅ Complete |
 | `DeterministicDecisionEngine` (Decision engine) | ✅ Complete |
-| `ResponseAgent` (Response & Mitigation node) | 🔲 Planned (Next Component) |
+| `ResponseAgent` (Execution & Containment node) | ✅ Complete |
+| `ActionGuard` + `EngineTrustPolicy` (response authorisation) | ✅ Complete |
+| Response executor ports (`SimulatedContainmentExecutor`, `NotificationExecutor`) | ✅ Complete |
+| Real response integrations (firewall / EDR / SOAR) | 🔲 Planned |
+| `CoordinatorAgent` (routing & flow control) | ✅ Complete |
+| Coordinated graph mode (`GraphBuilder` conditional edges) | ✅ Complete |
+| `LearningAgent` (outcome feedback & improvement) | ✅ Complete |
+| Analyst feedback loop (`POST /learning/feedback`) | ✅ Complete |
+| Automated retraining from feedback | 🔲 Deliberately out of scope — LearningAgent recommends, humans apply |
 
-| Coordinator Agent | 🔲 Planned |
-| Learning Agent | 🔲 Planned |
 | LLM engine integration (Ollama/OpenAI) | 🔲 Planned |
 | MITRE ATT&CK mapping | 🔲 Planned |
 | Production Zeek integration | 🔲 Planned |
+| `INFILTRATION` detection | 🔲 Not possible with the current dataset (no rows) |
+
+> Duplicate "Coordinator Agent / Learning Agent — 🔲 Planned" rows were removed
+> from this table: both are listed as ✅ Complete above and both are wired into
+> `app.py::ensure_runtime`.
 
 ---
 
@@ -105,9 +116,9 @@ graph TB
     subgraph "Agents"
         V[DetectionAgent]
         W[AnalysisAgent]
-        X[🔲 CoordinatorAgent]
-        Y[🔲 DecisionAgent]
-        Z[🔲 ResponseAgent]
+        X[CoordinatorAgent]
+        Y[DecisionAgent]
+        Z[ResponseAgent]
     end
 
     subgraph "AI Engine"
@@ -509,8 +520,8 @@ Thread-safe in-memory store with collection-per-domain semantics:
 
 ```mermaid
 flowchart TD
-    A[8 CICIDS2017 CSV Files\nMon–Fri, ~2.8M rows] --> B[load_all_datasets\nStratified sampling ≤ 400k rows]
-    B --> C[normalize_labels\n→ 8 classes: BENIGN, BOTNET, BRUTEFORCE,\nDDOS, DOS, INFILTRATION, PORTSCAN, WEBATTACK]
+    A[data/cicids2017_cleaned.csv\n2,520,751 rows × 53 cols] --> B[load_dataset\nStratified sampling ≤ 500k rows]
+    B --> C[normalize_labels\n→ 7 classes: BENIGN, BOTNET, BRUTEFORCE,\nDDOS, DOS, PORTSCAN, WEBATTACK]
     C --> D[clean_data\nStrip cols, coerce numeric,\nfill inf/NaN with median, drop dupes]
     D --> E[select_features\nANOVA F-score top-40\n+ Zeek-priority features]
     E --> F[train_test_split\n80/20 stratified]
@@ -525,16 +536,44 @@ flowchart TD
 
 ### 5.2 Attack Classes & Label Mapping
 
-| Raw Label | Normalized Class | Description |
-|---|---|---|
-| BENIGN | BENIGN | Normal network traffic |
-| Bot | BOTNET | Botnet C2 communication |
-| FTP-Patator, SSH-Patator | BRUTEFORCE | Credential brute-force attacks |
-| DDoS | DDOS | Distributed denial of service |
-| DoS Hulk/Slowloris/etc., Heartbleed | DOS | Denial of service variants |
-| Infiltration | INFILTRATION | Network infiltration attempts |
-| PortScan | PORTSCAN | Port scanning reconnaissance |
-| Web Attack XSS/SQLi/BruteForce | WEBATTACK | Web application attacks |
+**Seven classes.** `artifacts/label_encoder.pkl` holds exactly these:
+
+| Raw label in `cicids2017_cleaned.csv` | Normalized class | Rows | Description |
+|---|---|---|---|
+| Normal Traffic | BENIGN | 2,095,057 | Normal network traffic |
+| Bots | BOTNET | 1,948 | Botnet C2 communication |
+| Brute Force | BRUTEFORCE | 9,150 | Credential brute-force attacks |
+| DDoS | DDOS | 128,014 | Distributed denial of service |
+| DoS | DOS | 193,745 | Denial of service variants |
+| Port Scanning | PORTSCAN | 90,694 | Port scanning reconnaissance |
+| Web Attacks | WEBATTACK | 2,143 | Web application attacks (SQLi / XSS) |
+
+> **There is no `INFILTRATION` class.** Earlier revisions of this document
+> listed eight classes including infiltration. `data/cicids2017_cleaned.csv`
+> contains **zero** infiltration rows, `preprocess.CLASS_ORDER` lists seven,
+> and the trained encoder holds seven. The platform cannot detect infiltration
+> or lateral movement at all. Adding it would mean re-deriving the cleaned
+> dataset from `data/raw/Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv`.
+
+**Served model performance** — `artifacts/model_DNN.pkl`, an `MLPClassifier`,
+selected by `inference.resolve_model_path`:
+
+| Metric | Value |
+|---|---|
+| Accuracy | 0.9971 |
+| F1 (weighted) | 0.9970 |
+| **F1 (macro)** | **0.97** |
+| Recall (macro) | 0.95 |
+| Weakest class | BOTNET, recall 0.74 |
+
+Read the **macro** figures. Weighted metrics are dominated by BENIGN, DDOS, DOS
+and PORTSCAN, which together are ~99% of the rows.
+
+⚠️ `model_RandomForest.pkl`, `model_GradientBoosting.pkl` and
+`model_VotingEnsemble.pkl` are saved but **not served**, and all three have
+**0.08–0.10 recall on WEBATTACK**. Do not promote one to `model.pkl` without
+checking its macro recall first — `resolve_model_path`'s preference order is
+currently the only thing keeping the good model in production.
 
 ### 5.3 Zeek conn.log Feature Mapping
 
@@ -792,12 +831,13 @@ journey
 | Alert generation | ⭐⭐⭐⭐⭐ | ⭐⭐ |
 | Dashboard / visualisation | ⭐⭐⭐⭐⭐ | ⭐ |
 | MITRE ATT&CK mapping | ⭐⭐⭐⭐⭐ | 🔲 |
-| Automated response actions | ⭐⭐⭐⭐ | 🔲 |
+| Automated response actions | ⭐⭐⭐⭐ | ✅ (simulated executors; real integrations pending) |
 
 ### 10.4 Strengths & Gaps
 
 **Strengths:**
-- Very high ML model accuracy (~99% on CICIDS2017 per project notes)
+- Strong served model: macro F1 **0.97** (DNN/MLPClassifier), including 0.95 recall on web attacks
+  - Read macro, not weighted: weighted F1 is 0.997 but is dominated by four high-volume classes
 - Strong domain model with rigorous Pydantic validation and invariant enforcement
 - Clean, extensible adapter pattern isolates ML from domain logic
 - LangGraph shell enables future multi-agent expansion with minimal refactoring
@@ -841,19 +881,25 @@ Per the project rules (one component at a time), the next planned agent is the *
 
 ```mermaid
 graph LR
-    A[CoordinatorAgent\n🔲 Next] --> B[DetectionAgent\n✅ Done]
+    A[CoordinatorAgent\n✅ Done] --> B[DetectionAgent\n✅ Done]
     B --> C[AnalysisAgent\n✅ Done]
-    C --> D[DecisionAgent\n🔲 Planned]
-    D --> E[ResponseAgent\n🔲 Planned]
-    E --> F[LearningAgent\n🔲 Planned]
+    C --> D[DecisionAgent\n✅ Done]
+    D --> E[ResponseAgent\n✅ Done]
+    E --> A
+    A -.history.-> G[LearningAgent\n✅ Done]
+    G -.recommendations.-> H[Human analyst]
 ```
 
-| Agent | Responsibility | Depends On |
-|---|---|---|
-| **CoordinatorAgent** | Route events, manage graph flow, deduplicate | AnalysisAgent |
-| **DecisionAgent** | Decide response action based on analysis | AnalysisAgent, Alert schema |
-| **ResponseAgent** | Execute automated or supervised responses | DecisionAgent |
-| **LearningAgent** | Retrain or fine-tune the IDS model on new data | All agents |
+| Agent | Responsibility | Depends On | Status |
+|---|---|---|---|
+| **DecisionAgent** | Decide response action based on analysis | AnalysisAgent, Alert schema | ✅ Done |
+| **ResponseAgent** | Authorise and execute automated or supervised responses | DecisionAgent | ✅ Done |
+| **CoordinatorAgent** | Route events, drain the work queue, detect stalls, resume approval branches | All pipeline agents | ✅ Done |
+| **LearningAgent** | Measure outcomes, discover patterns, recommend improvements | All memory collections + analyst feedback | ✅ Done |
+
+**All six planned agents are complete.** The pipeline is a coordinated loop rather than a linear pass: before `CoordinatorAgent`, a run accepting N security events processed exactly one and silently dropped the rest.
+
+`LearningAgent` sits outside the per-event loop by design — it runs over history, not per flow, and it **recommends without executing**. Its accuracy metrics depend entirely on analyst feedback: the platform cannot detect its own false positives by introspection, so `POST /learning/feedback` is the highest-value input the system takes. See `docs/learning_agent.md`.
 
 ### 11.4 Infrastructure Backlog
 

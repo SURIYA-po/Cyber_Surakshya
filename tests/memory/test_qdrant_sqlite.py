@@ -1,7 +1,7 @@
 """Tests for QdrantSqliteMemoryProvider.
 
 Imports are made directly from submodules (not from the `memory` package root)
-to avoid triggering the lazy PostgreSQLMemoryProvider path that needs asyncpg.
+rather than from the `memory` package root.
 """
 
 import concurrent.futures
@@ -19,23 +19,60 @@ from memory.exceptions import (
 from memory.models import MemoryQuery, MemoryRecord
 from memory.qdrant_sqlite import QdrantSqliteMemoryProvider
 
-
 # ---------------------------------------------------------------------------
 # Shared fixture
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
 def provider():
-    """A fresh in-memory (Qdrant) + temp-file (SQLite) provider per test."""
+    """A fresh in-memory (Qdrant) + temp-file (SQLite) provider per test.
+
+    The provider is closed before the temporary directory is removed. Without
+    that, the leaked SQLite handle kept test_meta.db locked and every teardown
+    on Windows failed with PermissionError [WinError 32].
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = os.path.join(tmpdir, "test_meta.db")
-        p = QdrantSqliteMemoryProvider(db_path=db_path, qdrant_path=":memory:")
-        yield p
+        with QdrantSqliteMemoryProvider(db_path=db_path, qdrant_path=":memory:") as p:
+            yield p
 
 
 # ---------------------------------------------------------------------------
 # CRUD tests
 # ---------------------------------------------------------------------------
+
+class TestCount:
+    """`count` must report the collection size, not a query page size.
+
+    The dashboard used to derive "Total Alerts" from `len(search(...))`, which
+    is bounded by MemoryQuery.limit. It displayed a permanent 100 while memory
+    held 999 detections — a number that looked plausible and was wrong.
+    """
+
+    def test_counts_every_record_beyond_the_search_limit(
+        self, provider: QdrantSqliteMemoryProvider
+    ):
+        for i in range(120):
+            provider.store(
+                "col", MemoryRecord(collection="col", record_type="t", content=f"r{i}")
+            )
+
+        paged = provider.search("col", MemoryQuery(limit=100))
+
+        assert len(paged) == 100, "search is capped, which is why count exists"
+        assert provider.count("col") == 120
+
+    def test_counts_are_per_collection(self, provider: QdrantSqliteMemoryProvider):
+        provider.store("a", MemoryRecord(collection="a", record_type="t", content="x"))
+        provider.store("a", MemoryRecord(collection="a", record_type="t", content="y"))
+        provider.store("b", MemoryRecord(collection="b", record_type="t", content="z"))
+
+        assert provider.count("a") == 2
+        assert provider.count("b") == 1
+
+    def test_unknown_collection_counts_zero(self, provider: QdrantSqliteMemoryProvider):
+        assert provider.count("never-written") == 0
+
 
 class TestCRUD:
     def test_store_creates_record(self, provider: QdrantSqliteMemoryProvider):

@@ -87,6 +87,11 @@ def generate_alert_id() -> str:
     return str(uuid.uuid4())
 
 
+def generate_response_id() -> str:
+    """Generate a new response result ID (UUID v4)."""
+    return str(uuid.uuid4())
+
+
 def is_valid_uuid(value: str) -> bool:
     """Return True if value is a valid UUID string."""
     try:

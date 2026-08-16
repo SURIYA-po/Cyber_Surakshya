@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from adapters.detection.ids_adapter import IDSDetectionAdapter
 from agents.analysis import AnalysisAgent
+from agents.decision.decision_agent import DecisionAgent
+from agents.decision.deterministic import DeterministicDecisionEngine
 from agents.detection import DetectionAgent
 from ai_engine import AnalysisContext
 from ai_engine.deterministic import DeterministicRuleEngine
@@ -22,6 +24,8 @@ from cyber_surakshya.platform.state import create_initial_state
 from graph.builder import GraphBuilder
 from graph.checkpointing import InMemoryStatePersistence
 from graph.runtime import GraphRuntime
+from memory.inmemory import InMemoryMemoryProvider
+from memory.models import MemoryQuery
 from tests.platform.conftest import sample_detection_result, sample_security_event
 
 
@@ -132,3 +136,47 @@ def test_detection_then_analysis_runs_inside_langgraph_runtime():
     assert result.analysis_results[0].detection_id == result.detection_results[0].detection_id
     assert result.metadata["analysis_agent"]["status"] == "completed"
     assert persistence.load("analysis-run") == result
+
+
+def test_shared_memory_provider_is_used_across_agents():
+    context = CorrelationContext.create()
+    event = sample_security_event(context)
+    initial_state = create_initial_state(context).model_copy(
+        update={"security_events": [event]}
+    )
+    provider = InMemoryMemoryProvider()
+
+    builder = GraphBuilder()
+    builder.register_node(
+        "detection",
+        DetectionAgent(FakeIDSDetectionAdapter(), memory_provider=provider),
+    )
+    builder.register_node(
+        "analysis",
+        AnalysisAgent(DeterministicRuleEngine(), memory_provider=provider),
+    )
+    builder.register_node(
+        "decision",
+        DecisionAgent(DeterministicDecisionEngine(), memory_provider=provider),
+    )
+    runtime = GraphRuntime(builder=builder, persistence=InMemoryStatePersistence())
+
+    result = runtime.execute(initial_state, run_id="shared-memory-run")
+
+    detection_records = provider.search(
+        "detections",
+        MemoryQuery(record_types=["detection_result"], limit=10),
+    )
+    analysis_records = provider.search(
+        "analysis",
+        MemoryQuery(record_types=["analysis_result"], limit=10),
+    )
+    decision_records = provider.search(
+        "decisions",
+        MemoryQuery(record_types=["decision_result"], limit=10),
+    )
+
+    assert len(detection_records) == 1
+    assert len(analysis_records) == 1
+    assert len(decision_records) == 1
+    assert len(result.decision_results) == 1

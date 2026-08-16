@@ -18,6 +18,7 @@ from cyber_surakshya.platform.schemas.alert import Alert
 from cyber_surakshya.platform.schemas.analysis_result import AnalysisResult
 from cyber_surakshya.platform.schemas.decision_result import DecisionResult
 from cyber_surakshya.platform.schemas.detection_result import DetectionResult
+from cyber_surakshya.platform.schemas.response_result import ResponseResult
 from cyber_surakshya.platform.schemas.security_event import SecurityEvent
 
 
@@ -40,6 +41,7 @@ class PlatformSharedState(TypedDict, total=False):
     detection_results: Annotated[list[DetectionResult], operator.add]
     analysis_results: Annotated[list[AnalysisResult], operator.add]
     decision_results: Annotated[list[DecisionResult], operator.add]
+    response_results: Annotated[list[ResponseResult], operator.add]
     alerts: Annotated[list[Alert], operator.add]
     audit_trail: Annotated[list[AuditRecord], operator.add]
     errors: Annotated[list[str], operator.add]
@@ -65,6 +67,7 @@ class PlatformStateModel(BaseModel):
     detection_results: list[DetectionResult] = Field(default_factory=list)
     analysis_results: list[AnalysisResult] = Field(default_factory=list)
     decision_results: list[DecisionResult] = Field(default_factory=list)
+    response_results: list[ResponseResult] = Field(default_factory=list)
     alerts: list[Alert] = Field(default_factory=list)
     audit_trail: list[AuditRecord] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
@@ -80,6 +83,7 @@ class PlatformStateModel(BaseModel):
             detection_results=self.detection_results,
             analysis_results=self.analysis_results,
             decision_results=self.decision_results,
+            response_results=self.response_results,
             alerts=self.alerts,
             audit_trail=self.audit_trail,
             errors=self.errors,

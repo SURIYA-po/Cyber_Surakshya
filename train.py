@@ -31,38 +31,36 @@ Usage
 from __future__ import annotations
 
 import argparse
-import gc
 import json
 import os
 import sys
 import time
 import warnings
+from datetime import datetime, timezone
 
 import joblib
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-
 from sklearn.ensemble import (
-    RandomForestClassifier,
     HistGradientBoostingClassifier,
+    IsolationForest,
+    RandomForestClassifier,
     VotingClassifier,
 )
-from sklearn.neural_network import MLPClassifier
-from sklearn.covariance import EllipticEnvelope
-from sklearn.ensemble import IsolationForest
 from sklearn.metrics import (
+    ConfusionMatrixDisplay,
     accuracy_score,
     classification_report,
     confusion_matrix,
-    ConfusionMatrixDisplay,
     f1_score,
     precision_score,
     recall_score,
     roc_auc_score,
 )
+from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import label_binarize
 
 warnings.filterwarnings("ignore")
@@ -353,7 +351,7 @@ class NumpyAutoencoder:
         out = h3 @ self.W4 + self.b4   # linear output
         return h1, h2, h3, out
 
-    def fit(self, X: np.ndarray) -> "NumpyAutoencoder":
+    def fit(self, X: np.ndarray) -> NumpyAutoencoder:
         X = X.astype(np.float32)
         n = len(X)
         lr = self.lr
@@ -432,6 +430,17 @@ def evaluate_model(
     prec  = precision_score(y_test, y_pred, average="weighted", zero_division=0)
     rec   = recall_score   (y_test, y_pred, average="weighted", zero_division=0)
     f1w   = f1_score       (y_test, y_pred, average="weighted", zero_division=0)
+    # Macro averages weight every class equally, so a class the model almost
+    # never catches cannot be hidden by the volume of the easy ones. On this
+    # dataset weighted F1 reads 0.99 while macro F1 reads 0.84, because
+    # WEBATTACK and BOTNET are both rare and poorly detected. Reporting only
+    # the weighted figure overstates the model considerably.
+    f1m   = f1_score       (y_test, y_pred, average="macro", zero_division=0)
+    precm = precision_score(y_test, y_pred, average="macro", zero_division=0)
+    recm  = recall_score   (y_test, y_pred, average="macro", zero_division=0)
+    # Per-class recall, so the weakest class is a number the selector can act
+    # on rather than something a human has to notice in the printed report.
+    per_class_rec = recall_score(y_test, y_pred, average=None, zero_division=0)
     report = classification_report(y_test, y_pred,
                                    target_names=class_names,
                                    zero_division=0)
@@ -453,12 +462,22 @@ def evaluate_model(
         "precision_weighted": round(float(prec), 4),
         "recall_weighted":    round(float(rec),  4),
         "f1_weighted":        round(float(f1w),  4),
+        "f1_macro":           round(float(f1m),  4),
+        "precision_macro":    round(float(precm), 4),
+        "recall_macro":       round(float(recm), 4),
         "roc_auc_ovr_weighted": round(float(roc_auc), 4) if roc_auc is not None else "N/A",
+        "per_class_recall": {
+            cls: round(float(r), 4) for cls, r in zip(class_names, per_class_rec)
+        },
+        "min_class_recall": round(float(per_class_rec.min()), 4),
+        "worst_class": class_names[int(per_class_rec.argmin())],
     }
 
-    print(f"\n[EVAL] ── {model_name}")
+    print(f"\n[EVAL] -- {model_name}")
     print(f"  Accuracy           : {acc:.4f}")
     print(f"  Weighted F1        : {f1w:.4f}")
+    print(f"  MACRO F1           : {f1m:.4f}   <- per-class average; the honest headline")
+    print(f"  Macro Recall       : {recm:.4f}")
     print(f"  Weighted Precision : {prec:.4f}")
     print(f"  Weighted Recall    : {rec:.4f}")
     if roc_auc is not None:
@@ -510,7 +529,7 @@ def _save_class_distribution(y_enc, le, save_dir):
     from collections import Counter
     counts = Counter(le.inverse_transform(y_enc))
     labels = sorted(counts)
-    values = [counts[l] for l in labels]
+    values = [counts[label] for label in labels]
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.bar(labels, values, color=plt.cm.Set2(np.linspace(0, 1, len(labels))))
     ax.set_xlabel("Class",     fontsize=11)
@@ -534,6 +553,157 @@ def _plot_training_history(model_name, save_dir):
 # REPORT
 # ─────────────────────────────────────────────────────────────────────────────
 
+# A model that catches fewer than this fraction of any single class is not
+# fit to serve, whatever its headline score. Calibrated from the observed
+# failure: RandomForest, GradientBoosting and VotingEnsemble all score >0.99
+# weighted F1 while catching 8-10% of WEBATTACK. Selecting on weighted F1
+# would happily promote one of them.
+MIN_CLASS_RECALL = 0.50
+
+
+def select_best_model(all_metrics: dict) -> str:
+    """Choose the model to serve. Macro F1, with a per-class recall floor.
+
+    Selection used to be `max(..., key=f1_weighted)`. Weighted metrics are
+    dominated by the four high-volume classes (~99% of rows), so they cannot
+    distinguish a model that detects every attack family from one that is
+    blind to the two rarest. That is not a hypothetical: three of the four
+    models trained here have <=0.10 recall on WEBATTACK and >0.99 weighted F1.
+
+    Models clearing the floor are ranked by macro F1. If none clear it, the
+    best macro F1 still wins -- refusing to save any model would leave the
+    platform with no detector at all -- but the choice is reported loudly.
+    """
+    viable = {
+        name: m for name, m in all_metrics.items()
+        if m.get("min_class_recall", 0.0) >= MIN_CLASS_RECALL
+    }
+    if not viable:
+        print(
+            f"\n  [WARN] No model reaches {MIN_CLASS_RECALL:.0%} recall on every "
+            "class. Selecting on macro F1 alone; the served model is blind to "
+            "at least one attack family. Retrain with class weighting or "
+            "targeted oversampling before relying on this."
+        )
+        viable = all_metrics
+
+    rejected = set(all_metrics) - set(viable)
+    if rejected:
+        print(
+            f"\n  Excluded for low per-class recall (<{MIN_CLASS_RECALL:.0%}): "
+            + ", ".join(
+                f"{n} ({all_metrics[n]['worst_class']}="
+                f"{all_metrics[n]['min_class_recall']:.2f})"
+                for n in sorted(rejected)
+            )
+        )
+
+    return max(viable, key=lambda n: viable[n]["f1_macro"])
+
+
+def _dataset_fingerprint(path: str) -> dict:
+    """Identify the training data without hashing 717 MB.
+
+    Size plus mtime plus a hash of the header and first rows is enough to tell
+    "same file" from "different file", which is all the manifest needs.
+    """
+    import hashlib
+
+    if not os.path.exists(path):
+        return {"path": path, "available": False}
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        digest.update(fh.read(1_000_000))
+    stat = os.stat(path)
+    return {
+        "path":            os.path.basename(path),
+        "available":       True,
+        "size_bytes":      stat.st_size,
+        "modified_utc":    datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+        "head_sha256":     digest.hexdigest(),
+        "_note":           "head_sha256 covers the first 1 MB only.",
+    }
+
+
+def write_manifest(
+    *,
+    save_dir: str,
+    best_model_name: str,
+    all_metrics: dict,
+    class_names: list,
+    feature_cols: list,
+    dataset_path: str,
+    config: dict,
+    anomaly_enabled: bool,
+) -> str:
+    """Record which model is served and what produced it.
+
+    Two problems this solves.
+
+    WHICH MODEL IS SERVED. `inference.resolve_model_path` picked the first
+    existing file from a hardcoded preference list, so the served model was
+    decided by list order and whichever files happened to be on disk. Reading
+    `served_model` here makes it an explicit, auditable choice.
+
+    REPRODUCIBILITY. Nothing recorded the dataset, sample cap, seed, feature
+    count, or library versions behind the committed artifacts, so they could
+    not be regenerated or even identified.
+    """
+    import platform as _platform
+
+    import sklearn
+
+    manifest = {
+        "schema_version": 1,
+        "generated_utc":  datetime.now(timezone.utc).isoformat(),
+
+        # The contract inference.py reads.
+        "served_model":   f"model_{best_model_name}.pkl",
+        "served_model_name": best_model_name,
+        "selection_rule": (
+            f"highest macro F1 among models with per-class recall "
+            f">= {MIN_CLASS_RECALL:.0%}"
+        ),
+
+        "classes":        list(class_names),
+        "feature_count":  len(feature_cols),
+        "anomaly_layer":  anomaly_enabled,
+
+        "metrics": {
+            name: {
+                k: v for k, v in m.items()
+                if k in (
+                    "accuracy", "f1_weighted", "f1_macro", "recall_macro",
+                    "min_class_recall", "worst_class", "per_class_recall",
+                )
+            }
+            for name, m in all_metrics.items()
+        },
+
+        "reproducibility": {
+            "dataset":       _dataset_fingerprint(dataset_path),
+            "config":        config,
+            "random_state":  RANDOM_STATE,
+            "python":        _platform.python_version(),
+            "scikit_learn":  sklearn.__version__,
+            "numpy":         np.__version__,
+            "joblib":        joblib.__version__,
+            "_note": (
+                "joblib.load requires a scikit-learn compatible with the "
+                "version above. A major mismatch can fail to unpickle the "
+                "estimator classes."
+            ),
+        },
+    }
+
+    path = os.path.join(save_dir, "manifest.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2)
+    print(f"[SAVE] Manifest -> {path}")
+    return path
+
+
 def _save_report(all_metrics, all_reports, class_names, feature_cols,
                  best_model_name, save_dir):
     lines = [
@@ -547,17 +717,34 @@ def _save_report(all_metrics, all_reports, class_names, feature_cols,
         "\n" + "-" * 70,
         "METRICS SUMMARY",
         "-" * 70,
+        "",
+        "  READ F1(macro) FIRST. Weighted metrics are dominated by the four",
+        "  high-volume classes (BENIGN, DDOS, DOS, PORTSCAN) and hide poor",
+        "  per-class recall on the rare ones. A model can read 0.99 weighted",
+        "  and still miss most WEBATTACK and BOTNET flows.",
+        "",
     ]
-    hdr = f"  {'Model':<22s}  {'Accuracy':>10}  {'F1(wt)':>8}  {'Recall':>8}  {'Precision':>10}  {'ROC-AUC':>8}"
+    hdr = (
+        f"  {'Model':<22s}  {'Accuracy':>10}  {'F1(wt)':>8}  {'F1(macro)':>10}  "
+        f"{'Rec(macro)':>11}  {'ROC-AUC':>8}"
+    )
     lines.append(hdr)
-    lines.append("  " + "-" * 68)
+    lines.append("  " + "-" * 74)
     for name, m in all_metrics.items():
         lines.append(
             f"  {name:<22s}  {m['accuracy']:>10.4f}  "
-            f"{m['f1_weighted']:>8.4f}  {m['recall_weighted']:>8.4f}  "
-            f"{m['precision_weighted']:>10.4f}  "
+            f"{m['f1_weighted']:>8.4f}  {m.get('f1_macro', float('nan')):>10.4f}  "
+            f"{m.get('recall_macro', float('nan')):>11.4f}  "
             f"{str(m['roc_auc_ovr_weighted']):>8}"
         )
+
+    # Name every class whose recall falls below this, so a weak class is
+    # stated in the report rather than left for a reader to derive.
+    lines += [
+        "",
+        "  Weighted precision/recall are still available per model in the",
+        "  detailed classification reports below.",
+    ]
 
     lines += ["", "-" * 70, "DETAILED CLASSIFICATION REPORTS", "-" * 70]
     for name, rpt in all_reports.items():
@@ -611,7 +798,6 @@ def main(args=None):
     )
 
     class_names  = list(le.classes_)
-    n_classes    = len(class_names)
     benign_label = le.transform(["BENIGN"])[0]
 
     # ── CLASS DISTRIBUTION PLOT ──────────────────────────────────────────────
@@ -662,25 +848,30 @@ def main(args=None):
     print("MODEL COMPARISON")
     print("=" * 70)
     print(f"  {'Model':<22s}  {'Accuracy':>10}  {'F1(wt)':>8}  "
-          f"{'Recall':>8}  {'Precision':>10}")
-    print("  " + "─" * 65)
+          f"{'F1(macro)':>10}  {'MinClsRec':>10}  {'Worst class':<12}")
+    print("  " + "─" * 80)
 
-    best_name = max(all_metrics,
-                    key=lambda n: all_metrics[n]["f1_weighted"])
+    best_name = select_best_model(all_metrics)
+
     for name, m in all_metrics.items():
-        mark = "★" if name == best_name else " "
+        mark = "*" if name == best_name else " "
+        viable = "" if m["min_class_recall"] >= MIN_CLASS_RECALL else "  REJECTED"
         print(f"{mark} {name:<22s}  {m['accuracy']:>10.4f}  "
-              f"{m['f1_weighted']:>8.4f}  {m['recall_weighted']:>8.4f}  "
-              f"{m['precision_weighted']:>10.4f}")
+              f"{m['f1_weighted']:>8.4f}  {m['f1_macro']:>10.4f}  "
+              f"{m['min_class_recall']:>10.4f}  {m['worst_class']:<12}{viable}")
 
-    best_f1    = all_metrics[best_name]["f1_weighted"]
     best_model = trained_models[best_name]
-    print(f"\n  Best model: {best_name}  (F1={best_f1:.4f})")
+    best = all_metrics[best_name]
+    print(
+        f"\n  Selected: {best_name}  "
+        f"(macro F1={best['f1_macro']:.4f}, "
+        f"worst class {best['worst_class']}={best['min_class_recall']:.4f})"
+    )
 
     # ── SAVE BEST + ALL MODELS ───────────────────────────────────────────────
     model_path = os.path.join(cfg.artifact_dir, "model.pkl")
     joblib.dump(best_model, model_path)
-    print(f"[SAVE] Best model → {model_path}")
+    print(f"[SAVE] Best model -> {model_path}")
 
     for name, model in trained_models.items():
         joblib.dump(model,
@@ -736,19 +927,40 @@ def main(args=None):
     _save_report(all_metrics, all_reports, class_names,
                  feature_cols, best_name, cfg.artifact_dir)
 
+    # ── MANIFEST ─────────────────────────────────────────────────────────────
+    # Written last: it names the served model and records what produced it, so
+    # it must describe artifacts that are already on disk.
+    from preprocess import DATA_PATH as _DATASET_PATH
+    write_manifest(
+        save_dir=cfg.artifact_dir,
+        best_model_name=best_name,
+        all_metrics=all_metrics,
+        class_names=class_names,
+        feature_cols=feature_cols,
+        dataset_path=_DATASET_PATH,
+        config={
+            "max_rows": cfg.max_rows,
+            "top_k":    cfg.top_k,
+            "no_dnn":   cfg.no_dnn,
+            "no_anomaly": cfg.no_anomaly,
+            "balance_strategy": "hybrid",
+        },
+        anomaly_enabled=not cfg.no_anomaly,
+    )
+
     # ── SUMMARY ──────────────────────────────────────────────────────────────
     print("\n" + "=" * 70)
     print("TRAINING COMPLETE")
     print("=" * 70)
     print(f"  Artifact dir  : {cfg.artifact_dir}")
     print(f"  model.pkl     : best model ({best_name})")
-    print(f"  scaler.pkl    : StandardScaler")
-    print(f"  label_encoder.pkl")
-    print(f"  feature_columns.json")
+    print("  scaler.pkl    : StandardScaler")
+    print("  label_encoder.pkl")
+    print("  feature_columns.json")
     if not cfg.no_anomaly:
-        print(f"  iforest.pkl   : Isolation Forest")
-        print(f"  autoencoder.pkl: Autoencoder")
-        print(f"  anomaly_thresholds.json")
+        print("  iforest.pkl   : Isolation Forest")
+        print("  autoencoder.pkl: Autoencoder")
+        print("  anomaly_thresholds.json")
     print(f"\n  Figures → {cfg.plot_dir}/")
 
     return best_model, scaler, le, feature_cols

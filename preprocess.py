@@ -27,7 +27,6 @@ import json
 import os
 import warnings
 from collections import Counter
-from typing import Optional
 
 import joblib
 import numpy as np
@@ -168,7 +167,7 @@ def load_dataset(
             prop = max(remaining_budget * cnt / max(non_benign_total, 1), MINORITY_FLOOR)
             targets[lbl] = min(cnt, int(prop))
 
-    print(f"\n  Sampling targets:")
+    print("\n  Sampling targets:")
     for lbl, t in sorted(targets.items(), key=lambda x: -x[1]):
         print(f"    {lbl:<25s}: {t:>8,}")
 
@@ -197,7 +196,7 @@ def load_dataset(
 
     from io import StringIO
     all_lines = hdr_line
-    for lbl, lines in buffers.items():
+    for lines in buffers.values():
         all_lines += "".join(lines)
 
     df = pd.read_csv(
@@ -246,7 +245,7 @@ def normalize_labels(df: pd.DataFrame) -> pd.DataFrame:
         df = df[~unknown_mask]
 
     df = df.drop(columns=[LABEL_COL])
-    print(f"[LABELS] Normalised distribution:")
+    print("[LABELS] Normalised distribution:")
     for cls, cnt in df["label"].value_counts().items():
         print(f"  {cls:<15s}: {cnt:>10,}")
     return df
@@ -256,17 +255,82 @@ def normalize_labels(df: pd.DataFrame) -> pd.DataFrame:
 # 3. CLEANING  (light guard — dataset is pre-cleaned)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Header corruptions seen in derived dataset files, mapped to the canonical
+# CICIDS2017 name.
+#
+# `pyDestination Port` is real: data/cicids2017_cleaned.csv literally begins
+# with it, while every file in data/raw/ correctly reads " Destination Port".
+# Two stray characters were written into the first line when the cleaned file
+# was produced — most likely a shell redirect that captured a `py` command.
+#
+# Left unrepaired it is silently load-bearing. The column's *values* are fine,
+# so training succeeds, metrics look normal, and the bad name is written into
+# feature_columns.json. Nothing notices until the live ingestion layer tries to
+# map model features to capture output three components later and reports
+# "1 model feature(s) have no cicflowmeter source mapping".
+KNOWN_HEADER_CORRUPTIONS: dict[str, str] = {
+    "pyDestination Port": "Destination Port",
+}
+
+
+def sanitize_feature_names(columns) -> list[str]:
+    """Normalise dataset column names before anything depends on them.
+
+    Strips a UTF-8 BOM (which `open(..., encoding="utf-8")` leaves on the first
+    header cell), trims whitespace, and repairs known corruptions.
+
+    Repairs are printed rather than applied silently: a renamed column means
+    the source file is wrong, and the operator should fix it there.
+    """
+    cleaned: list[str] = []
+    repairs: list[tuple[str, str]] = []
+
+    for raw in columns:
+        name = str(raw).lstrip("﻿").strip()
+        fixed = KNOWN_HEADER_CORRUPTIONS.get(name, name)
+        if fixed != name:
+            repairs.append((name, fixed))
+        cleaned.append(fixed)
+
+    for before, after in repairs:
+        # ASCII only: the Windows console is cp1252 and a non-ASCII character
+        # here raises UnicodeEncodeError, killing the training run at exactly
+        # the moment this guard is trying to report a problem.
+        print(f"  [HEADER] Repaired corrupted column {before!r} -> {after!r}")
+    if repairs:
+        print(
+            "  [HEADER] The source dataset header is wrong. Fix it there; "
+            "this repair only protects the artifacts."
+        )
+    return cleaned
+
+
+def assert_feature_names_clean(features: list[str]) -> None:
+    """Refuse to persist a feature list containing a known-bad name.
+
+    The last line of defence before feature_columns.json is written. A bad name
+    here becomes a broken artifact that only surfaces at ingestion time, so it
+    fails the training run instead.
+    """
+    bad = [f for f in features if f in KNOWN_HEADER_CORRUPTIONS or f != f.strip()]
+    if bad:
+        raise ValueError(
+            f"Refusing to write feature_columns.json with malformed feature "
+            f"name(s): {bad}. The dataset header is corrupted; repair the CSV "
+            "rather than the artifact, or the next retrain reintroduces it."
+        )
+
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Light cleaning pass:
-      - Strip column-name whitespace
+      - Repair and strip column names
       - Drop DROP_COLS
       - Coerce to numeric, replace inf/NaN with column median
       - Drop duplicate rows
     """
     print("\n[CLEAN] Cleaning data…")
     df = df.copy()
-    df.columns = df.columns.str.strip()
+    df.columns = sanitize_feature_names(df.columns)
 
     # Drop unwanted columns
     for c in DROP_COLS:
@@ -479,6 +543,9 @@ def run_preprocessing(
     print("STEP 4: FEATURE SELECTION")
     print("=" * 65)
     selected_features, _ = select_features(df, top_k=top_k, random_state=random_state)
+
+    # Fail the run rather than persist a name the ingestion layer cannot map.
+    assert_feature_names_clean(selected_features)
 
     feat_path = os.path.join(output_dir, "feature_columns.json")
     with open(feat_path, "w") as fh:

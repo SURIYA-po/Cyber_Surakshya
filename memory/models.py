@@ -109,6 +109,16 @@ class MemoryQuery(BaseModel):
     trace_id: str | None = Field(default=None, min_length=36, max_length=36)
 
     metadata: dict[str, Any] = Field(default_factory=dict)
+    #: Batch metadata filter, for joining a page of parent records to their
+    #: children in one query instead of one query per parent.
+    #:
+    #: Keys are ANDed; the values within a single key are ORed. A record
+    #: matches a key only when that key is *present* in its metadata and its
+    #: value equals one of the listed alternatives — an absent key never
+    #: matches, even against a list containing None.
+    #:
+    #: Leaving this None preserves the pre-existing query behaviour exactly.
+    metadata_any: dict[str, list[Any]] | None = None
     tags: list[str] = Field(default_factory=list)
 
     created_after: datetime | None = None
@@ -137,6 +147,27 @@ class MemoryQuery(BaseModel):
                 raise ValueError("Metadata keys must be non-empty.")
         return value
 
+    @field_validator("metadata_any")
+    @classmethod
+    def check_metadata_any(
+        cls, value: dict[str, list[Any]] | None
+    ) -> dict[str, list[Any]] | None:
+        if value is None:
+            return None
+        for key, alternatives in value.items():
+            if not str(key).strip():
+                raise ValueError("metadata_any keys must be non-empty.")
+            if not isinstance(alternatives, list):
+                raise ValueError(
+                    f"metadata_any[{key!r}] must be a list of alternatives."
+                )
+            if not alternatives:
+                # An empty alternative list matches nothing, which is almost
+                # always an accidentally-empty parent page rather than an
+                # intentional "return zero rows".
+                raise ValueError(f"metadata_any[{key!r}] must not be empty.")
+        return value
+
     @field_validator("tags")
     @classmethod
     def normalize_tags(cls, value: list[str]) -> list[str]:
@@ -161,6 +192,28 @@ class MemoryQuery(BaseModel):
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+
+    def matches_metadata(self, metadata: dict[str, Any] | None) -> bool:
+        """Evaluate both metadata filters against one record's metadata.
+
+        Providers share this rather than each re-implementing the predicate, so
+        ``metadata`` and ``metadata_any`` cannot mean different things on
+        different backends.
+
+        ``metadata``     — exact equality on every key (unchanged behaviour).
+        ``metadata_any`` — the key must be present, and its value must equal one
+                           of the supplied alternatives. Keys AND, values OR.
+        """
+        metadata = metadata or {}
+        for key, value in self.metadata.items():
+            if metadata.get(key) != value:
+                return False
+        for key, alternatives in (self.metadata_any or {}).items():
+            if key not in metadata:
+                return False
+            if metadata[key] not in alternatives:
+                return False
+        return True
 
 
 class MemorySearchResult(BaseModel):

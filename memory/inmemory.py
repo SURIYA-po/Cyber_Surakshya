@@ -198,9 +198,11 @@ class InMemoryMemoryProvider:
             return False
         if query.updated_before is not None and record.updated_at > query.updated_before:
             return False
-        for key, value in query.metadata.items():
-            if record.metadata.get(key) != value:
-                return False
+        # Both metadata filters are evaluated by MemoryQuery itself so this
+        # backend and QdrantSqliteMemoryProvider cannot disagree about what
+        # `metadata` / `metadata_any` mean.
+        if not query.matches_metadata(record.metadata):
+            return False
         if query.tags and not set(query.tags).issubset(set(record.tags)):
             return False
         return True

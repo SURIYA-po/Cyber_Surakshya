@@ -5,6 +5,7 @@ import ThreatAssessment from "../components/details/ThreatAssessment";
 import AnalysisPanel from "../components/details/AnalysisPanel";
 import Timeline from "../components/details/Timeline";
 import SourceInfo from "../components/details/SourceInfo";
+import FeedbackPanel from "../components/details/FeedbackPanel";
 import { useApi } from "../hooks/useApi";
 import { getAlertDetail } from "../api/alertsApi";
 
@@ -14,24 +15,38 @@ export default function AlertDetail() {
   const { id } = useParams();
   const { data, loading, error, refetch } = useApi(() => getAlertDetail(id), [id]);
 
-  const alert = data?.alert;
-  const analysis = data?.analysis;
-  const responseAction = data?.response_action;
+  const payload = data && !data.alert && !data.analysis && !data.response_action ? data : data ?? {};
+  const alert = payload.alert ?? payload;
+  const analysis = payload.analysis ?? null;
+  const responseAction = payload.response_action ?? payload.responseAction ?? null;
+
+  const responseActionLabel = (() => {
+    if (!responseAction) return null;
+    if (typeof responseAction === "string") return responseAction;
+    if (typeof responseAction === "object") {
+      const action = responseAction.action_type || responseAction.actionType || responseAction.type || "observe";
+      const priority = responseAction.priority || "MEDIUM";
+      const approval = responseAction.requires_approval ? "requires approval" : "auto-approved";
+      return `${String(action).toUpperCase()} • priority ${String(priority).toUpperCase()} • ${approval}`;
+    }
+    return String(responseAction);
+  })();
 
   const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
 
   const alertShape = alert ? {
     id: String(alert.id),
-    attackType: alert.attack_type,
+    attackType: alert.attack_type ?? alert.attackType,
     severity: cap(alert.severity),
     status: cap(alert.status),
-    sourceIp: alert.source_ip,
+    sourceIp: alert.source_ip ?? alert.sourceIp,
     destination: "Internal Network",
-    time: new Date(alert.created_at).toLocaleString(),
-    threatScore: analysis?.confidence ?? 0,
-    confidence: analysis?.confidence ?? 0,
+    time: alert.created_at ? new Date(alert.created_at).toLocaleString() : alert.time,
+    threatScore: analysis?.confidence ?? alert.confidence_score ?? 0,
+    confidence: analysis?.confidence ?? alert.confidence_score ?? 0,
     riskLevel: cap(alert.severity),
     mitre: "T1190",
+    timeline: alert.timeline ?? [],
   } : null;
 
   const analysisShape = analysis ? {
@@ -78,7 +93,7 @@ export default function AlertDetail() {
       </div>
 
       {/* Response action banner */}
-      {responseAction && (
+      {responseActionLabel && (
         <div style={{
           display:"flex", alignItems:"center", gap:"0.75rem",
           padding:"0.75rem 1rem", marginBottom:"1.25rem",
@@ -88,7 +103,7 @@ export default function AlertDetail() {
           <span style={{ fontSize:11, fontWeight:600, color:"var(--accent-bright)", textTransform:"uppercase", letterSpacing:"0.06em" }}>
             Response Action
           </span>
-          <span style={{ fontSize:13, color:"var(--text-primary)", fontWeight:500 }}>{responseAction}</span>
+          <span style={{ fontSize:13, color:"var(--text-primary)", fontWeight:500 }}>{responseActionLabel}</span>
         </div>
       )}
 
@@ -113,10 +128,16 @@ export default function AlertDetail() {
           <div style={{ marginBottom:"var(--gap)" }}>
             <AnalysisPanel analysis={analysisShape} />
           </div>
-          <div className="grid-2">
+          <div className="grid-2" style={{ marginBottom:"var(--gap)" }}>
             <Timeline alert={alertShape} />
             <SourceInfo alert={alertShape} />
           </div>
+          {/* Closes the feedback loop: the only ground truth LearningAgent has. */}
+          <FeedbackPanel
+            detectionId={alert.detection_id ?? alert.id}
+            decisionId={responseAction?.decision_id}
+            predictedLabel={alertShape.attackType}
+          />
         </>
       ) : (
         <p style={{ fontSize:13, color:"var(--text-secondary)" }}>Alert not found.</p>

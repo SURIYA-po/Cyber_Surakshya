@@ -1,0 +1,151 @@
+# Ingestion policy — how the platform taps a network and what it keeps.
+#
+# This file is DATA. Changing the interface, snaplen, filter, or retention is a
+# YAML edit, not a code change.
+#
+# FAIL-CLOSED: a missing or unreadable file yields the built-in defaults in
+# ingestion/config.py, which are the most restrictive configuration supported.
+# `capture.interface` has NO default — the platform must never guess which
+# network to tap.
+
+capture:
+  # Backend that runs the capture.
+  #   local  — dumpcap on this host. Required on Docker Desktop (Windows/macOS),
+  #            where a Linux container's --net=host sees the Docker VM's
+  #            interfaces, NOT the host's Wi-Fi/Ethernet.
+  #   docker — dumpcap in a container with --net=host. Correct on Linux hosts.
+  backend: local
+
+  # No default. A friendly name ("Wi-Fi", "eth0"), an NPF device path, or an
+  # index from `dumpcap -D`. Refusing to start without this is deliberate.
+  interface: "Wi-Fi"
+
+  # Headers only. Every flow feature is computable from headers, so payloads
+  # are pure liability — credentials, tokens, and PII written to disk for
+  # nothing. The single highest-value security control in this layer.
+  snaplen: 96
+
+  # Berkeley Packet Filter applied AT CAPTURE TIME, before anything reaches
+  # disk. Filtering later is not the same guarantee.
+  # Example: "not port 22 and not net 10.0.99.0/24"
+  bpf_filter: ""
+
+  # Ring buffer. rotate_seconds × retain_files is the retention window.
+  # 60 × 120 = 2 hours.
+  rotate_seconds: 60
+  retain_files: 120
+
+  output_dir: captures
+  file_prefix: cs
+
+  # Refuse to start if free disk falls below this. A capture that fills the
+  # disk takes the whole platform down with it.
+  min_free_disk_mb: 512
+
+  # Hard ceiling enforced by the retention sweeper, independent of the ring
+  # buffer — a crashed and restarted dumpcap leaves the previous ring behind.
+  max_total_size_mb: 4096
+
+upload:
+  # Remote ingest — POST /ingestion/pcap, opened by starting ingestion in
+  # `remote` mode. Sensors elsewhere submit closed pcaps and they join the
+  # pipeline at exactly the point a locally captured file would.
+  #
+  # A local capture is bounded by the interface it taps. This ingress is
+  # bounded only by what is written here, and it is reachable by anything
+  # holding the API key. Treat these as security limits, not tuning knobs.
+
+  # Rejected past this size, mid-upload, before any of it is parsed.
+  # cicflowmeter reassembles flows in memory, so a big pcap costs far more
+  # than its bytes on disk. Rotate captures on the sensor instead of raising
+  # this.
+  max_file_mb: 256
+
+  # Staging directory, separate from `capture.output_dir` so a remote sender
+  # can never touch local capture files or the retention window over them.
+  # A submission is deleted the moment it is processed.
+  work_dir: uploads
+
+  # Safety net for files a crash left mid-processing. Not a retention policy —
+  # nothing is meant to still be here.
+  retention_seconds: 3600
+
+  # Courtesy check on the sender's filename. The real gate is the pcap/pcapng
+  # magic-byte check on the first bytes off the wire, which this cannot relax.
+  allowed_suffixes: [".pcap", ".pcapng", ".cap"]
+
+stream:
+  # Redis Streams decouples capture rate from pipeline rate and survives a
+  # consumer restart. It is NOT a security control — Redis binds to all
+  # interfaces with no authentication by default. See `url` and `docker/redis/`.
+  url: "redis://127.0.0.1:6379/0"
+
+  # Credentials come from the environment, never this file — a password in a
+  # committed file is in the repository history forever.
+  #
+  # Per-role variables let the producer and consumer authenticate as different
+  # ACL users (see docker/redis/users.acl), so the capture side genuinely
+  # cannot read the stream. Both fall back to the general pair when unset.
+  #   INGESTION_REDIS_USERNAME / _PASSWORD                    — fallback
+  #   INGESTION_REDIS_PRODUCER_USERNAME / _PRODUCER_PASSWORD  — capture side
+  #   INGESTION_REDIS_CONSUMER_USERNAME / _CONSUMER_PASSWORD  — pipeline side
+  username_env: "INGESTION_REDIS_USERNAME"
+  password_env: "INGESTION_REDIS_PASSWORD"
+
+  stream_key:  "cs:flows"
+  group:       "cs-pipeline"
+  consumer_prefix: "worker"
+
+  # Bounded stream. A traffic burst must not exhaust Redis memory; `~` lets
+  # Redis trim efficiently at a node boundary rather than exactly.
+  max_length: 100000
+  approximate_trim: true
+
+  # Flows consumed per batch, and per coordinated graph run. Aligns with
+  # GraphConfig.coordinator_max_iterations so one batch is one drainable run.
+  batch_size: 50
+  block_ms: 5000
+
+  # A message whose consumer died is reclaimed after this idle time.
+  claim_idle_ms: 60000
+  # Deliveries after which a message is treated as poison and dead-lettered
+  # rather than retried forever.
+  max_delivery_attempts: 5
+  dead_letter_key: "cs:flows:dead"
+
+  # flow_id dedup window. Replaying a pcap must not fabricate a volumetric
+  # attack — the platform deliberately treats repeated identical flows as
+  # signal, so genuine duplicates must be suppressed before they reach it.
+  dedup_ttl_seconds: 900
+  dedup_key_prefix: "cs:dedup:"
+
+  # Refuse to start when Redis is unreachable rather than dropping flows on
+  # the floor. Silent loss is the one failure this layer must not have.
+  fail_closed: true
+
+worker:
+  # How often the background loop checks for closed capture files and drains
+  # the stream. Cheap when idle; a new pcap only appears every rotate_seconds.
+  poll_interval_seconds: 5
+
+  # Batches per poll. Bounds how long one loop iteration can run so stop()
+  # stays responsive.
+  max_batches_per_poll: 4
+
+  # Retention sweep cadence. The ring buffer handles the common case; this
+  # catches rings orphaned by a restart.
+  sweep_interval_seconds: 300
+
+  # Consecutive loop failures before the worker stops and reports unhealthy.
+  # Prevents an unreachable dependency from spinning at full speed forever.
+  max_consecutive_errors: 10
+
+docker:
+  image: cyber-surakshya/capture:latest
+  container_name: cs-capture
+  # Never --privileged. dumpcap needs exactly these two capabilities and drops
+  # privileges after opening the capture socket.
+  cap_add: ["NET_RAW", "NET_ADMIN"]
+  network_mode: host
+  read_only_rootfs: true
+  user: "pcap"

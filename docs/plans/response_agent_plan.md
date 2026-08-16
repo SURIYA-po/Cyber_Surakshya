@@ -1,35 +1,325 @@
-# Implementation Plan: Building the `ResponseAgent` (Response & Mitigation Node)
+# Implementation Plan: `ResponseAgent` (Execution & Containment Node)
 
-Cyber Surakshya currently features `DetectionAgent` (ML-based threat identification) and `AnalysisAgent` (rule/enrichment engine). The next logical evolution in our multi-agent SOC architecture is the **`ResponseAgent`** — an automated incident mitigation node responsible for executing containment policies, firewall rules, host isolation, and notification escalation.
+> Status: **IMPLEMENTED.** See `docs/response_agent.md` for the as-built documentation.
+> Depends on: `DecisionAgent` (complete), `platform.actions` (complete), `MemoryProvider` (complete), `GraphBuilder` (complete).
+>
+> **Deviations from this plan, decided during implementation:**
+> 1. **`agents/response/config.py` added** (not in §3). Policy loading spans trust tiers, protected targets, *and* blast radius, so it did not belong inside `trust.py` or `guard.py`.
+> 2. **Executors declare `action_targets` (a per-verb mapping), not flat `supported_actions` + `supported_targets`.** The cross-product of the two sets let an executor claim nonsense pairs such as `BLOCK_IP` on a `FILE` target. `supported_actions`/`supported_targets` remain as derived properties for diagnostics.
+> 3. **Idempotency is checked *before* the guard, not after** (§5.2 step 5 → step 3). A replay of an action that already happened must not consume blast-radius budget, and "we already did this" is a more accurate account than "you have done too much".
+> 4. **`ApprovalStatus.AUTO_APPROVED` is not treated as human approval.** Discovered while testing: doing so let an LLM engine satisfy the very gate meant to supervise it, silently defeating the `AI_SUPERVISED` tier. Only a real analyst ruling or `ApprovalStatus.APPROVED` counts.
 
 ---
 
-## Architecture Overview
+## 0. Why `ResponseAgent` is the correct next component
 
-```mermaid
-flowchart LR
-    SecurityEvent --> DetectionAgent
-    DetectionAgent -->|DetectionResult| AnalysisAgent
-    AnalysisAgent -->|AnalysisResult| ResponseAgent
-    ResponseAgent -->|ResponseResult| BlockedIPs / Containment
+| Candidate | Verdict |
+|---|---|
+| **ResponseAgent** | ✅ **Build now.** Its only upstream dependency — `DecisionResult` — is complete and frozen. It closes the detect → analyse → decide → **act** loop, which is the first point where the platform delivers real value. |
+| CoordinatorAgent | ⛔ Premature. A coordinator routes between nodes; with a 3-node linear pipeline there is nothing to route. It only becomes meaningful once ≥4 nodes with branching (approval loops, retries, escalation) exist — i.e. **after** ResponseAgent defines those branches. Building it first would mean inventing routing policy for edges that do not exist yet. |
+| LearningAgent | ⛔ Premature. It learns from execution *outcomes*, which only `ResponseResult` can supply. |
+
+`ResponseAgent` is also the component that makes the **AI-based decision engine safe to enable**. Today `DeterministicDecisionEngine` is trusted by construction — its output space is a fixed rule table. The moment `OllamaDecisionEngine` / `ClaudeDecisionEngine` is injected (a stated goal), an unbounded generator becomes the source of destructive actions. `ResponseAgent` is the last gate before side-effects, so the safety layer belongs here, not in the decision layer.
+
+---
+
+## 1. Boundary Contract
+
+```
+DecisionResult ──► ResponseAgent ──► ResponseResult ──► real-world side-effect
 ```
 
+### DOES
+- Read `state.decision_results`; select the first `DecisionResult` with no corresponding `ResponseResult`.
+- Enforce the **approval gate** (`requires_approval` / `approval_status`, plus live analyst approvals).
+- Enforce the **safety gate** (`ActionGuard`) — engine-trust, protected targets, blast radius, idempotency.
+- Resolve an executor from the `ExecutorRegistry` by `(ActionType, target_type)`.
+- Execute with timeout, bounded retry, and `dry_run` honoured.
+- Append exactly one validated `ResponseResult` to `state.response_results`.
+- Persist the response to memory (`responses` collection) for audit, rollback, and future LearningAgent feedback.
+
+### DOES NOT
+- Read `AnalysisResult`, `DetectionResult`, or `SecurityEvent`. **`DecisionResult` is its only input contract.** (Already asserted in `decision_result.py` docstring — the plan honours it.)
+- Re-evaluate policy or invent a different action than the one decided. The guard may **deny** or **downgrade**; it may never **escalate** to something more destructive.
+- Mutate `DecisionResult` in place (see §5.3).
+- Perform graph routing, retries across nodes, or coordination.
+- Talk to an LLM. The AI lives in the *decision* engine; the response layer is deliberately deterministic.
+
 ---
 
-## Proposed Components
+## 2. Handling the AI-Based Decision Engine (core of this component)
 
-### 1. Platform Domain & Schemas
-- `cyber_surakshya/platform/schemas/response_result.py`:
-  - `ResponseAction` enum (`BLOCK_IP`, `UNBLOCK_IP`, `ISOLATE_HOST`, `RATE_LIMIT`, `QUARANTINE_FILE`, `NOTIFY_SOC`)
-  - `ResponseStatus` enum (`PENDING`, `EXECUTED`, `FAILED`, `APPROVAL_REQUIRED`, `REVERTED`)
-  - `ResponseResult` Pydantic model (`response_id`, `alert_id`, `action`, `target`, `status`, `rationale`, `audit`)
+`DecisionAgent` already treats engines as interchangeable behind the `DecisionEngine` Protocol. `ResponseAgent` must therefore assume the `Action` it receives may have been generated by a language model, and must remain safe under that assumption. Four mechanisms:
 
-### 2. Policy Engine & Agent
-- `agents/response/policy.py`:
-  - `ResponsePolicyEngine`: evaluates threat severity & risk scores to select containment actions.
-- `agents/response/response_agent.py`:
-  - `ResponseAgent`: LangGraph node executing policy logic on `PlatformStateModel`.
+### 2.1 Engine Trust Tiers
+`ResponseResult` execution eligibility is a function of `DecisionResult.decision_engine` + `engine_version`, not just `approval_status`.
 
-### 3. Graph & API Integration
-- `graph/builder.py`: register `ResponseAgent` into graph builder pipeline.
-- `app.py`: expose `/response/actions` API for manual review and policy management.
+| Tier | Example engines | Destructive actions | Min confidence | Notes |
+|---|---|---|---|---|
+| `DETERMINISTIC` | `DeterministicDecisionEngine` | Allowed when `AUTO_APPROVED` | 0.70 | Bounded output space; current behaviour preserved. |
+| `AI_SUPERVISED` | `OllamaDecisionEngine`, `ClaudeDecisionEngine` | **Forced to `REQUIRE_APPROVAL`** regardless of `AUTO_APPROVED` | 0.90 | An LLM cannot self-authorise a block/isolate. Non-destructive actions (`NOTIFY_SOC`, `OPEN_TICKET`, `LOG_ONLY`, `ENRICH_THREAT_INTEL`) execute normally. |
+| `AI_AUTONOMOUS` | opt-in per deployment, off by default | Allowed | 0.95 | For teams that have validated their model. Requires explicit config. |
+| `UNKNOWN` | any unregistered engine name | Denied → downgraded to `NOTIFY_SOC` | — | **Fail-closed.** A new engine is untrusted until registered. |
+
+Trust config is data (`config/response_policy.yaml` or env), not code — adding `GPTDecisionEngine` is a config line.
+
+### 2.2 Action Schema Re-validation
+An LLM-produced `Action` is Pydantic-valid but not necessarily *sane*. Before execution the guard re-checks:
+- `target_value` actually parses as the claimed `target_type` (IP → `ipaddress.ip_address`; HOST → hostname grammar; FILE → absolute path; PROCESS → PID/name).
+- `action_type` ↔ `target_type` coherence (`BLOCK_IP` on a `FILE` target is rejected, not attempted).
+- `parameters.duration_seconds` within configured min/max; `parameters.custom` keys validated against the resolved executor's declared schema — unknown keys are dropped, not forwarded.
+
+### 2.3 Blast-Radius Limiter
+A hallucinating or looping engine could emit N destructive actions in one run. The guard enforces:
+- max destructive actions per `correlation_id` (default 3),
+- max destructive actions per target per rolling window (default 1 / 15 min),
+- max global destructive actions per minute (circuit breaker → all further destructive actions downgrade to `NOTIFY_SOC` and raise a platform alert).
+
+### 2.4 Idempotency
+LLM engines are non-deterministic and may re-emit the same action on re-runs; LangGraph replays are also possible. Every execution is keyed by an **idempotency key** = `sha256(action_type | target_type | target_value | correlation_id)`. A repeat within the active window returns the prior `ResponseResult` with `status=DEDUPLICATED` instead of re-executing.
+
+> **Net effect:** switching `DecisionAgent` from deterministic to LLM requires **zero** `ResponseAgent` code changes — only a trust-tier config entry. That is the extensibility test this design must pass.
+
+---
+
+## 3. Folder Structure
+
+```
+cyber_surakshya/platform/
+├── schemas/
+│   └── response_result.py          # NEW — ResponseStatus, GuardVerdict, ExecutionAttempt, ResponseResult
+├── identifiers/correlation.py      # EDIT — add generate_response_id()
+└── state/shared_state.py           # EDIT — add response_results to TypedDict + StateModel
+
+adapters/response/                  # NEW — outbound ports (mirrors adapters/detection/)
+├── __init__.py
+├── base.py                         # ResponseExecutor ABC, ExecutionRequest, ExecutionReceipt
+├── registry.py                     # ExecutorRegistry: (ActionType, target_type) -> executor
+├── simulated.py                    # SimulatedExecutor — safe default, in-memory ledger
+└── notification.py                 # NotificationExecutor — NOTIFY_SOC / OPEN_TICKET / LOG_ONLY
+
+agents/response/                    # NEW — domain logic, zero infrastructure imports
+├── __init__.py
+├── response_agent.py               # ResponseAgent LangGraph node
+├── config.py                       # ResponsePolicyConfig loading + fail-closed defaults
+├── guard.py                        # ActionGuard + SafetyRule + GuardVerdict evaluation
+├── trust.py                        # EngineTrustPolicy (§2.1)
+├── approval.py                     # ApprovalStore protocol + MemoryApprovalStore
+└── exceptions.py                   # ResponseAgentError hierarchy
+
+config/response_policy.yaml         # NEW — trust tiers, protected targets, blast radius (§10.1)
+
+tests/agents/test_response_agent.py         # NEW
+tests/agents/test_action_guard.py           # NEW
+tests/adapters/test_response_executors.py   # NEW
+docs/response_agent.md                      # NEW
+```
+
+Note the deliberate split, mirroring the existing codebase convention:
+`agents/response/` = pure domain (unit-testable with no mocks of network drivers);
+`adapters/response/` = infrastructure edge (mirrors `adapters/detection/`).
+
+---
+
+## 4. Schemas
+
+### 4.1 `ResponseStatus`
+| Value | Meaning |
+|---|---|
+| `EXECUTED` | Executor confirmed the side-effect. |
+| `DRY_RUN` | Simulated only (`parameters.dry_run=True` or global dry-run mode). |
+| `AWAITING_APPROVAL` | Approval gate blocked it; resumable. |
+| `BLOCKED_BY_GUARD` | Safety gate denied it. Terminal. |
+| `DOWNGRADED` | Guard replaced a destructive action with a notification; the substitute executed. |
+| `DEDUPLICATED` | Idempotency hit; prior response referenced. |
+| `NO_OP` | `LOG_ONLY` — recorded, nothing executed. |
+| `FAILED` | Executor raised or timed out after retries. |
+| `REVERTED` | A prior response was rolled back by this one. |
+
+### 4.2 `GuardVerdict`
+`ALLOW | ALLOW_DRY_RUN | REQUIRE_APPROVAL | DOWNGRADE | DENY` — plus `rule_name`, `reason`, `substitute_action | None`. Always recorded, including on `ALLOW`, so every execution has a traceable authorisation.
+
+### 4.3 `ResponseResult` (fields)
+```
+response_id, decision_id, correlation_id, trace_id        # identity + lineage
+action (Action, post-guard), original_action (Action)     # what ran vs. what was decided
+status (ResponseStatus)
+guard_verdict, guard_rule, guard_reason
+engine_trust_tier                                          # provenance of the decision (§2.1)
+executor_name, executor_version
+idempotency_key
+attempts: list[ExecutionAttempt]                           # timestamp, outcome, error, duration_ms
+external_reference: str | None                             # firewall rule ID, EDR containment ID…
+revert_token: str | None                                   # enables UNBLOCK_IP / RELEASE_HOST
+reverts_response_id: str | None
+response_duration_ms, executed_at, expires_at | None
+metadata, audit (AuditMetadata)
+```
+Validators mirror `DecisionResult`: UUID checks, UTC coercion, and a `model_validator` enforcing coherence (`EXECUTED` ⇒ `executor_name` set; `DOWNGRADED` ⇒ `action != original_action`; `BLOCKED_BY_GUARD` ⇒ `attempts == []`).
+
+### 4.4 `ResponseExecutor` port
+```python
+class ResponseExecutor(ABC):
+    executor_name: str
+    executor_version: str
+    supported_actions: frozenset[ActionType]
+    supported_targets: frozenset[str]           # "IP", "HOST", "FILE", "PROCESS"…
+    parameter_schema: type[BaseModel] | None    # validates parameters.custom (§2.2)
+
+    @abstractmethod
+    def execute(self, request: ExecutionRequest) -> ExecutionReceipt: ...
+    def revert(self, receipt: ExecutionReceipt) -> ExecutionReceipt: ...   # default: NotSupported
+    def health_check(self) -> bool: ...                                    # default: True
+```
+This is the extension point for every future integration — iptables/nftables, pfSense, AWS Security Groups, CrowdStrike, SentinelOne, Wazuh, TheHive, Slack. **None are built in this component.** Only `SimulatedExecutor` and `NotificationExecutor` ship, so the platform is end-to-end functional and provably side-effect-free until an operator explicitly registers a real executor.
+
+---
+
+## 5. `ResponseAgent` Node Design
+
+### 5.1 Constructor (dependency injection, mirrors `DecisionAgent`)
+```python
+ResponseAgent(
+    executor_registry: ExecutorRegistry,
+    *,
+    guard: ActionGuard | None = None,            # defaults to fail-closed policy
+    approval_store: ApprovalStore | None = None,
+    memory_provider: MemoryProvider | None = None,
+    dry_run: bool = False,                       # global kill-switch
+    agent_name: str = "response_agent",
+)
+```
+
+### 5.2 Execution flow
+```
+1. hydrate PlatformStateModel
+2. select next DecisionResult with no ResponseResult   → none ⇒ metadata-only "skipped" update
+3. approval gate:
+     requires_approval and approval_store says not APPROVED  ⇒ AWAITING_APPROVAL
+     approval_status == REJECTED                             ⇒ NO_OP (audit-logged)
+4. guard.evaluate(decision) → GuardVerdict                   (§2)
+     DENY ⇒ BLOCKED_BY_GUARD | REQUIRE_APPROVAL ⇒ AWAITING_APPROVAL
+     DOWNGRADE ⇒ substitute action, continue
+5. idempotency check against memory                          ⇒ DEDUPLICATED
+6. registry.resolve(action_type, target_type)                → executor | MissingExecutorError
+7. execute with timeout + bounded retry (exponential backoff, only on transient errors)
+8. build ResponseResult, store to memory, return state update
+```
+Failure handling mirrors `DecisionAgent.__call__` exactly: broad `except` → `_error_update` appending to `state.errors` + `metadata["response_agent"]`. The node never raises into the graph.
+
+### 5.3 Design decision — DecisionResult is **not** mutated
+`DecisionStatus.EXECUTED` / `FAILED` exist in the enum, but `PlatformSharedState` list fields use `Annotated[list, operator.add]` append reducers — in-place mutation is impossible without breaking the reducer contract, and would destroy the append-only audit trail.
+
+**Resolution:** decision lifecycle is a *projection*. The API/read layer derives a decision's effective status by joining `response_results` on `decision_id`. `DecisionResult.status` remains the value assigned at decision time. This is documented in `docs/response_agent.md` and `docs/decision_agent.md` so the enum is not misread as mutable.
+
+### 5.4 Design decision — approvals live outside graph state
+A run that ends in `AWAITING_APPROVAL` terminates; the analyst approves minutes later via API. The frozen state snapshot cannot carry that. `ApprovalStore` (memory-backed, `approvals` collection) is queried live at step 3, so a later graph invocation — or a `POST /response/actions/{decision_id}/execute` resume — picks up the approval. This is the branch that will justify a `CoordinatorAgent` later.
+
+---
+
+## 6. Integration
+
+### 6.1 Graph
+`graph/builder.py` registration order becomes `detection → analysis → decision → response`. No builder code changes — the existing linear chaining suffices. `app.py::ensure_runtime` gains one `register_node("response", ResponseAgent(...))` block.
+
+### 6.2 API (`app.py`)
+| Endpoint | Purpose |
+|---|---|
+| `GET /response/actions` | List `ResponseResult`s from the `responses` memory collection. |
+| `GET /response/actions/{response_id}` | Detail incl. guard verdict + attempts. |
+| `POST /response/actions/{decision_id}/approve` | Write approval → resume execution. |
+| `POST /response/actions/{decision_id}/reject` | Terminal rejection, audited. |
+| `POST /response/actions/{response_id}/revert` | Issue the inverse action via `executor.revert()`. |
+| `GET /response/pending-approvals` | HITL queue for the dashboard. |
+
+**`/blocked-ips` is re-based, not replaced.** It currently reads the `MOCK_BLOCKED_IPS` list mutated inline in `simulate_attack` ([app.py:799-808](app.py#L799-L808)) — a fake response layer. It becomes a projection over `ResponseResult` where `action_type == BLOCK_IP` and `status == EXECUTED`, and `DELETE /blocked-ips/{id}` becomes a real revert. The existing frontend contract ([blockedIpsApi.js](frontend/src/api/blockedIpsApi.js)) is preserved so `BlockedIPs.jsx` needs no changes; the mock branch in `simulate_attack` is deleted.
+
+### 6.3 Frontend (follow-up, not this component)
+New `Response.jsx` + `responseApi.js` for the approval queue; `AlertDetail.jsx` timeline gains a response stage. Listed for sequencing only.
+
+---
+
+## 7. Test Plan
+
+| File | Coverage |
+|---|---|
+| `test_response_agent.py` | happy path (`AUTO_APPROVED` → `EXECUTED`); no-pending-decision skip; `requires_approval` → `AWAITING_APPROVAL`; approval-then-resume; `REJECTED` → `NO_OP`; `LOG_ONLY` → `NO_OP`; missing executor → `FAILED` with error appended; executor raises → retry then `FAILED`; state-update shape mirrors `DecisionAgent` assertions; memory store called with `responses` collection; memory failure never breaks the node. |
+| `test_action_guard.py` | **AI-engine matrix (§2):** deterministic + `AUTO_APPROVED` + `BLOCK_IP` ⇒ `ALLOW`; LLM engine + `AUTO_APPROVED` + `BLOCK_IP` ⇒ `REQUIRE_APPROVAL`; LLM + `NOTIFY_SOC` ⇒ `ALLOW`; unknown engine ⇒ `DOWNGRADE`; confidence below tier threshold ⇒ `DOWNGRADE`; protected-CIDR target ⇒ `DENY`; `BLOCK_IP` on `FILE` target ⇒ `DENY`; malformed `target_value` ⇒ `DENY`; 4th destructive action in one correlation ⇒ `DOWNGRADE`; global circuit breaker trips; **missing/corrupt `response_policy.yaml` ⇒ built-in fail-closed defaults, never permissive**; a tier added by config alone changes behaviour with no code change (proves §10 decision 1). |
+| `test_response_executors.py` | registry resolution + `MissingExecutorError`; `supported_targets` filtering; `dry_run` produces no ledger entry; idempotency key stability; `revert()` round-trip; `parameter_schema` drops unknown `custom` keys. |
+| existing suites | `test_decision_agent.py` must stay green — no regressions in the decision layer. |
+
+Target: ≥90% branch coverage on `agents/response/`, since this is the only module in the platform with real-world side-effects.
+
+---
+
+## 8. Future-Proofing Checklist
+
+| Future capability | Change required |
+|---|---|
+| Host / EDR detection adapter (`adapters/detection/edr_adapter.py`) | None in ResponseAgent. Its `DetectionResult` flows through unchanged; an `EndpointExecutor` registers for `ISOLATE_HOST`/`TERMINATE_PROCESS` with `target_type="HOST"/"PROCESS"`. |
+| Application-layer adapter (WAF, API gateway) | Register an executor for `RATE_LIMIT` with `target_type="ENDPOINT"`. No enum change if the verb exists. |
+| LLM decision engine (Ollama / Claude / GPT) | One trust-tier config entry. §2 covers the rest. |
+| AI *analysis* engine with tool-calling | Unaffected — ResponseAgent never reads `AnalysisResult`. |
+| Real firewall / SOAR integration | New file in `adapters/response/`, one registry line. Zero agent changes. |
+| `LearningAgent` | Consumes the `responses` memory collection written here — outcome feedback is available from day one. |
+| `CoordinatorAgent` | Consumes the `AWAITING_APPROVAL` branch defined in §5.4 as its first real routing decision. |
+
+---
+
+## 9. Build Order (single component, sequenced)
+
+1. **Schemas** — `response_result.py`, `generate_response_id`, state fields. *(no behaviour)*
+2. **Ports** — `adapters/response/base.py`, `registry.py`, `simulated.py`, `notification.py`.
+3. **Safety** — `trust.py`, `guard.py`, `approval.py`.
+4. **Agent** — `response_agent.py`, `exceptions.py`, `__init__.py`.
+5. **Integration** — graph registration, API endpoints, `/blocked-ips` re-base, mock removal.
+6. **Tests & docs** — three test modules, `docs/response_agent.md`, `OVERVIEW.md` status update.
+
+Per AI_DEVELOPMENT_RULES §7, work stops after step 6. `CoordinatorAgent` is the next approval gate.
+
+---
+
+## 10. Resolved Decisions (confirmed — step 1 unblocked)
+
+| # | Decision | Ruling | Consequence for implementation |
+|---|---|---|---|
+| 1 | Default trust for AI decision engines | **`AI_SUPERVISED`, fail-closed** | An LLM-produced `AUTO_APPROVED` destructive action is overridden to `REQUIRE_APPROVAL`. `AI_AUTONOMOUS` exists in the tier enum but is unreachable without explicit per-deployment config. Unregistered engine names resolve to `UNKNOWN` → `DOWNGRADE`. |
+| 2 | Real executors in scope | **No** | Only `SimulatedExecutor` + `NotificationExecutor` ship. `adapters/response/` contains no network, subprocess, or cloud-SDK imports. Real iptables/pfSense/EDR/SOAR executors become their own approval-gated components. |
+| 3 | Protected-target list source | **Config file now, AssetInventory later** | `config/response_policy.yaml` ships with safe built-in defaults (loopback, link-local, multicast, broadcast, RFC1918 gateway addresses, platform self-IP). `ActionTarget.asset_criticality` stays `None` until AssetInventory exists; the guard reads it opportunistically so no rewrite is needed when it lands. |
+
+### 10.1 `config/response_policy.yaml` — shape implied by the above
+
+```yaml
+dry_run: false                      # global kill-switch; true forces every action to DRY_RUN
+
+engine_trust:                       # decision_engine name -> tier  (§2.1)
+  DeterministicDecisionEngine: DETERMINISTIC
+  # OllamaDecisionEngine:      AI_SUPERVISED    # add when the LLM engine is enabled
+  # unlisted engines fall through to UNKNOWN (fail-closed)
+
+trust_tiers:
+  DETERMINISTIC:  { destructive_allowed: true,  min_confidence: 0.70 }
+  AI_SUPERVISED:  { destructive_allowed: false, min_confidence: 0.90 }   # default for all LLMs
+  AI_AUTONOMOUS:  { destructive_allowed: true,  min_confidence: 0.95 }   # opt-in only
+  UNKNOWN:        { destructive_allowed: false, min_confidence: 1.01 }   # unreachable => always downgrade
+
+destructive_actions:                # everything else is non-destructive
+  [BLOCK_IP, ISOLATE_HOST, TERMINATE_PROCESS, QUARANTINE_FILE, REVOKE_CREDENTIALS, RATE_LIMIT]
+
+protected_targets:
+  cidrs:  ["127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/4", "255.255.255.255/32",
+           "0.0.0.0/32", "::1/128", "fe80::/10"]
+  hosts:  []                        # operator-supplied hostnames (DNS, DC, jump box)
+  gateways_auto_detect: true        # resolve default gateway at startup, add to denylist
+
+blast_radius:
+  max_destructive_per_correlation: 3
+  max_destructive_per_target_window_seconds: 900
+  global_destructive_per_minute: 10       # circuit breaker => downgrade + platform alert
+
+idempotency_window_seconds: 900
+execution_timeout_seconds: 30
+max_retries: 2                            # transient errors only
+```
+
+Config is loaded once at startup and passed to `ActionGuard`; it is **data, not code**, so enabling an LLM engine or protecting a new subnet is a YAML edit with no Python change. A missing config file yields the built-in fail-closed defaults above — never a permissive fallback.

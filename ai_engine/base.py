@@ -6,9 +6,9 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cyber_surakshya.platform.schemas.analysis_result import AnalysisResult
 from cyber_surakshya.platform.schemas.detection_result import DetectionResult
 from cyber_surakshya.platform.schemas.security_event import SecurityEvent
-from cyber_surakshya.platform.schemas.analysis_result import AnalysisResult
 
 
 class AnalysisContext(BaseModel):

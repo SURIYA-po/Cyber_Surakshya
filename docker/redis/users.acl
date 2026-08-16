@@ -1,0 +1,5 @@
+user default off
+user cs-producer on >dev-producer-password-change-me ~cs:flows ~cs:dedup:* ~cs:pcap:processed resetchannels +xadd +xlen +set +sadd +sismember +expire +ping
+user cs-consumer on >dev-consumer-password-change-me ~cs:flows ~cs:flows:dead resetchannels +xreadgroup +xread +xack +xautoclaim +xclaim +xpending +xrange +xlen +xadd +xgroup|create +xgroup|createconsumer +xinfo|groups +xinfo|stream +ping
+user cs-observer on >dev-observer-password-change-me ~cs:* resetchannels +xlen +xpending +xinfo|groups +xinfo|stream +ping
+user cs-admin on >dev-admin-password-change-me ~* &* +@all

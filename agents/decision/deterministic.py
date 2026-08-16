@@ -14,6 +14,9 @@ Future replacement without changing DecisionAgent:
 """
 from __future__ import annotations
 
+from agents.decision.base import DecisionContext, DecisionDraft
+from agents.decision.exceptions import PolicyEvaluationError
+from agents.decision.policy import PolicyCondition, PolicyRule
 from cyber_surakshya.platform.actions.action import Action
 from cyber_surakshya.platform.actions.action_parameters import ActionParameters
 from cyber_surakshya.platform.actions.action_target import ActionTarget
@@ -24,9 +27,6 @@ from cyber_surakshya.platform.schemas.decision_result import (
     ApprovalStatus,
     DecisionPriority,
 )
-from agents.decision.base import DecisionContext, DecisionDraft
-from agents.decision.exceptions import PolicyEvaluationError
-from agents.decision.policy import PolicyCondition, PolicyRule
 
 # Severity ordering used for >= comparisons (IntEnum provides this naturally,
 # but we make the ordering semantics explicit for clarity).
@@ -76,10 +76,16 @@ class DeterministicDecisionEngine:
         ),
         # Rule 2: Entity with ≥2 prior incidents → host isolation, requires approval.
         # Covers: repeat attackers, persistent threats, slow-burn lateral movement.
+        #
+        # DETECTED is required. Without it, a *benign* flow from an IP that
+        # happens to have two prior records matched this rule and proposed
+        # isolating the host — the memory hit alone is not evidence of current
+        # malicious activity.
         PolicyRule(
             name="repeat_offender_isolate",
             conditions=PolicyCondition(
                 min_memory_hits=2,
+                required_detection_status=DetectionStatus.DETECTED,
             ),
             action_type=ActionType.ISOLATE_HOST,
             target_type="IP",
@@ -130,7 +136,32 @@ class DeterministicDecisionEngine:
             ),
             confidence_score=0.80,
         ),
-        # Rule 5: INCONCLUSIVE detection → SOC review (anomaly signal present
+        # Rule 5: any remaining DETECTED flow → SOC notification.
+        #
+        # Required for exhaustiveness. Now that risk reflects attack class
+        # rather than classifier confidence, low-consequence detections
+        # (reconnaissance port scans score ~40) legitimately land below the
+        # MEDIUM floor of Rule 4. Without this rule they match nothing and
+        # make_decision raises PolicyEvaluationError — a detected attack would
+        # crash the pipeline instead of being reported.
+        PolicyRule(
+            name="low_severity_detected_notify",
+            conditions=PolicyCondition(
+                required_detection_status=DetectionStatus.DETECTED,
+            ),
+            action_type=ActionType.NOTIFY_SOC,
+            target_type="IP",
+            priority=DecisionPriority.LOW,
+            requires_approval=False,
+            approval_status=ApprovalStatus.AUTO_APPROVED,
+            rationale_template=(
+                "Low-consequence detection at risk {risk:.0f}/100 "
+                "({confidence:.0%} confidence). Reported for visibility; no "
+                "containment applied."
+            ),
+            confidence_score=0.75,
+        ),
+        # Rule 6: INCONCLUSIVE detection → SOC review (anomaly signal present
         # but supervised classifier is uncertain).
         PolicyRule(
             name="inconclusive_soc_review",
@@ -148,7 +179,7 @@ class DeterministicDecisionEngine:
             ),
             confidence_score=0.70,
         ),
-        # Rule 6: BENIGN catch-all → log only. Must be last.
+        # Rule 7: BENIGN catch-all → log only. Must be last.
         PolicyRule(
             name="benign_log_only",
             conditions=PolicyCondition(

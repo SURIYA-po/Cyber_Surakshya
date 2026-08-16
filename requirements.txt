@@ -1,11 +1,48 @@
-fastapi>=0.95.0
-uvicorn[standard]>=0.22.0
-python-multipart>=0.0.6
-pandas>=1.4.0
-scikit-learn>=1.0.0
-numpy>=1.22.0
-joblib>=1.1.0
-pydantic>=2.0.0
-langgraph>=0.0.26
-langchain-core>=0.1.30
-matplotlib>=3.5.0
+# Cyber Surakshya - runtime dependencies.
+#
+#   pip install -r requirements.txt
+#
+# Lower bounds are the oldest versions this platform is known to work with.
+# Development happens on the versions noted in the trailing comments.
+
+# ── API ───────────────────────────────────────────────────────────────────────
+fastapi>=0.115.0            # dev: 0.136.1
+uvicorn[standard]>=0.30.0   # dev: 0.46.0
+python-multipart>=0.0.9     # dev: 0.0.28
+python-dotenv>=1.0.0        # dev: 1.2.2
+
+# ── ML core (inference.py, train.py, preprocess.py) ───────────────────────────
+pandas>=2.0.0               # dev: 3.0.3
+scikit-learn>=1.4.0         # dev: 1.8.0  -- must match the version that wrote
+numpy>=1.26.0               # dev: 2.4.4     artifacts/*.pkl, or joblib.load
+joblib>=1.3.0               # dev: 1.5.3     may fail on the estimator classes
+matplotlib>=3.8.0           # dev: 3.11.0
+
+# ── Platform schemas ──────────────────────────────────────────────────────────
+pydantic>=2.7.0             # dev: 2.13.4 -- v2 only; schemas use ConfigDict
+PyYAML>=6.0                 # dev: 6.0.3
+
+# ── Agent orchestration ───────────────────────────────────────────────────────
+langgraph>=0.2.0            # dev: 1.2.9
+langchain-core>=0.3.0       # dev: 1.4.9
+
+# ── Memory layer (memory/qdrant_sqlite.py) ────────────────────────────────────
+# Imported unconditionally by memory/__init__.py, which app.py imports at
+# startup. Their absence from this file meant a clean
+# `pip install -r requirements.txt && uvicorn app:app` crashed on import.
+# sentence-transformers pulls in torch (~2 GB); there is no lighter path while
+# the memory layer embeds records for semantic search.
+qdrant-client>=1.9.0        # dev: 1.18.0
+sentence-transformers>=3.0.0  # dev: 5.6.0
+
+# ── Live ingestion (ingestion/) ───────────────────────────────────────────────
+# Redis Streams transport, plus scapy as the capture and parsing engine behind
+# the vendored cicflowmeter package. Ingestion is part of the running platform,
+# so these are runtime rather than development dependencies.
+redis>=5.0.0                # dev: 8.1.0
+scapy>=2.5.0                # dev: 2.7.0
+
+# ── Optional backends ─────────────────────────────────────────────────────────
+# PostgreSQLMemoryProvider is lazy-loaded via memory.__getattr__ and is not
+# wired into app.py. Install only if you select that backend:
+#   pip install "asyncpg>=0.29.0"

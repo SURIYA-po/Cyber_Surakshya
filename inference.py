@@ -1,7 +1,7 @@
 """
 inference.py
 ============
-NEW PIPELINE — inference for the CICIDS2017 IDS.
+NEW PIPELINE -- inference for the CICIDS2017 IDS.
 
 Accepts:
   1. Python dict / list of dicts         (API, single/batch JSON)
@@ -10,13 +10,13 @@ Accepts:
   4. Generic feature CSV                 (pre-extracted features)
 
 Dual-layer detection:
-  Layer 1 — Supervised Classifier        (RF / GB / DNN / VotingEnsemble)
-  Layer 2 — Anomaly Detection            (Isolation Forest + Autoencoder)
+  Layer 1 -- Supervised Classifier        (RF / GB / DNN / VotingEnsemble)
+  Layer 2 -- Anomaly Detection            (Isolation Forest + Autoencoder)
 
 The anomaly layer acts as a "reactive second opinion":
   - If the supervised model says BENIGN but the anomaly layer fires,
     the final result is upgraded to INCONCLUSIVE (not just ignored).
-  - If both layers flag attack → confidence is boosted.
+  - If both layers flag attack -> confidence is boosted.
 
 Usage
 -----
@@ -34,8 +34,9 @@ import json
 import os
 import sys
 import warnings
+from dataclasses import dataclass
 from io import StringIO
-from typing import Optional, Union
+from typing import Any
 
 import joblib
 import numpy as np
@@ -70,7 +71,7 @@ def _register_autoencoder_for_unpickling() -> None:
 
     main_module = sys.modules.get("__main__")
     if main_module is not None and not hasattr(main_module, "NumpyAutoencoder"):
-        setattr(main_module, "NumpyAutoencoder", _TrainAutoencoder)
+        main_module.NumpyAutoencoder = _TrainAutoencoder
 
 
 _register_autoencoder_for_unpickling()
@@ -100,7 +101,7 @@ CICIDS_FEATURE_NAMES = [
     "Idle Mean", "Idle Max", "Idle Min",
 ]
 
-# CICFlowMeter uses slightly different names in some versions — normalise them
+# CICFlowMeter uses slightly different names in some versions -- normalise them
 CICFLOW_ALIASES: dict[str, str] = {
     # Aliases with leading space (old CICFlowMeter versions)
     " Destination Port":             "Destination Port",
@@ -195,19 +196,58 @@ CICFLOW_ALIASES: dict[str, str] = {
 # 1. LOAD ARTIFACTS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def resolve_model_path(artifact_dir: str, requested_model: Optional[str] = None) -> str:
-    """Resolve the best available model artifact path for inference.
+MANIFEST_NAME = "manifest.json"
 
-    The project saves multiple model files during training, including
-    ``model.pkl`` for the best model and ``model_<name>.pkl`` for each
-    evaluated model. Inference should prefer an existing file in the
-    artifact directory instead of blindly requesting ``model.pkl`` when it
-    is absent.
+
+def load_manifest(artifact_dir: str = ARTIFACT_DIR) -> dict | None:
+    """Read artifacts/manifest.json, or None when it is absent/unreadable.
+
+    Written by train.py. Records which model is served and what produced it.
+    """
+    path = os.path.join(artifact_dir, MANIFEST_NAME)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except FileNotFoundError:
+        return None
+    except Exception as exc:
+        print(f"  [WARN] {path} is unreadable ({exc}); falling back to name order.")
+        return None
+    return manifest if isinstance(manifest, dict) else None
+
+
+def resolve_model_path(artifact_dir: str, requested_model: str | None = None) -> str:
+    """Resolve which model artifact to serve.
+
+    Precedence:
+      1. An explicitly requested filename.
+      2. ``manifest.json``'s ``served_model`` -- an auditable, deliberate choice
+         recorded by training.
+      3. A hardcoded preference list (legacy fallback).
+
+    Step 2 exists because step 3 decides the served model by LIST ORDER and
+    whatever files happen to be present. Three of the four models this project
+    trains have 0.08-0.10 recall on WEBATTACK while scoring >0.99 weighted F1,
+    so "whichever file is found first" is a genuinely dangerous rule: dropping
+    a `model.pkl` built from the wrong estimator silently blinds the detector
+    to an entire attack family, with every headline metric still reading 99%.
     """
     if requested_model:
         candidate = os.path.join(artifact_dir, requested_model)
         if os.path.exists(candidate):
             return candidate
+
+    manifest = load_manifest(artifact_dir)
+    if manifest:
+        served = manifest.get("served_model")
+        if served:
+            candidate = os.path.join(artifact_dir, str(served))
+            if os.path.exists(candidate):
+                return candidate
+            print(
+                f"  [WARN] {MANIFEST_NAME} names {served!r} as the served model "
+                f"but it is not in {artifact_dir}. Falling back to name order."
+            )
 
     preferred_names = [
         "model.pkl",
@@ -228,23 +268,26 @@ def resolve_model_path(artifact_dir: str, requested_model: Optional[str] = None)
 MODEL_PATH = resolve_model_path(ARTIFACT_DIR)
 
 
-class _FallbackModel:
-    def predict(self, X):
-        return np.zeros(len(X), dtype=int)
-    def predict_proba(self, X):
-        return np.ones((len(X), 1), dtype=float)
+class ArtifactError(RuntimeError):
+    """Raised when the artifacts required for inference cannot be loaded.
 
-class _FallbackScaler:
-    def transform(self, X):
-        return X
+    This is deliberately fatal. The previous behaviour substituted a stub
+    model that returned ``BENIGN`` at confidence 1.0 for every flow, which
+    turned a missing file into an IDS that reported the network clean --
+    indistinguishable, from the outside, from a working one. A detector that
+    cannot load its model must refuse to answer, not answer "safe".
+    """
 
-class _FallbackLE:
-    classes_ = np.array(["BENIGN"])
-    def inverse_transform(self, y):
-        return np.array(["BENIGN"] * len(y))
 
 class IDSArtifacts:
-    """Container for all inference-time artifacts."""
+    """Container for all inference-time artifacts.
+
+    Raises:
+        ArtifactError: any of the four required artifacts (model, scaler,
+            label encoder, feature list) is missing or unreadable. The
+            anomaly layer remains optional -- it degrades to supervised-only
+            with ``anomaly_ready = False``, which callers can inspect.
+    """
 
     def __init__(
         self,
@@ -256,43 +299,57 @@ class IDSArtifacts:
         ae_path:         str = AE_PATH,
         thresholds_path: str = THRESHOLDS_PATH,
     ):
-        print("[INFERENCE] Loading artifacts…")
+        print("[INFERENCE] Loading artifacts...")
 
-        if not os.path.exists(model_path):
-            print(f"  [WARN] Model artifact not found at {model_path}. Using fallback container.")
-            self.model  = _FallbackModel()
-            self.scaler = _FallbackScaler()
-            self.le     = _FallbackLE()
-            self.feature_cols = CICIDS_FEATURE_NAMES
-            self.iforest     = None
-            self.autoencoder = None
-            self.if_threshold  = None
-            self.ae_threshold  = None
-            self.anomaly_ready = False
-            return
+        # Every required artifact is checked before any is loaded, so the
+        # error names all of them at once instead of one per re-run.
+        missing = [
+            label
+            for label, path in (
+                ("model",         model_path),
+                ("scaler",        scaler_path),
+                ("label encoder", le_path),
+                ("feature list",  feat_path),
+            )
+            if not os.path.exists(path)
+        ]
+        if missing:
+            raise ArtifactError(
+                f"Cannot load IDS artifacts -- missing: {', '.join(missing)}. "
+                f"Looked in {os.path.dirname(model_path) or '.'}. "
+                "Train the model (`python train.py`) or point ARTIFACT_DIR at "
+                "a directory containing model.pkl, scaler.pkl, "
+                "label_encoder.pkl and feature_columns.json. Detection is "
+                "disabled until this is resolved."
+            )
 
-        self.model = joblib.load(model_path)
-
-        if os.path.exists(scaler_path):
+        try:
+            self.model  = joblib.load(model_path)
             self.scaler = joblib.load(scaler_path)
-        else:
-            print(f"  [WARN] Scaler artifact not found at {scaler_path}. Using fallback scaler.")
-            self.scaler = _FallbackScaler()
-
-        if os.path.exists(le_path):
-            self.le = joblib.load(le_path)
-        else:
-            print(f"  [WARN] Label encoder artifact not found at {le_path}. Using fallback label encoder.")
-            self.le = _FallbackLE()
-
-        if os.path.exists(feat_path):
+            self.le     = joblib.load(le_path)
             with open(feat_path) as fh:
                 self.feature_cols: list[str] = json.load(fh)
-        else:
-            print(f"  [WARN] Feature list not found at {feat_path}. Using default CICIDS feature names.")
-            self.feature_cols = CICIDS_FEATURE_NAMES
+        except Exception as exc:
+            raise ArtifactError(
+                f"IDS artifacts exist but could not be loaded: {exc}"
+            ) from exc
 
-        # Anomaly layer (optional — may not exist if --no_anomaly was used)
+        if not self.feature_cols:
+            raise ArtifactError(f"{feat_path} contains an empty feature list.")
+
+        # A scaler fitted on a different number of features than the feature
+        # list declares means the two artifacts came from different training
+        # runs. Scaling would still "work" -- silently, on misaligned columns.
+        expected = getattr(self.scaler, "n_features_in_", None)
+        if expected is not None and expected != len(self.feature_cols):
+            raise ArtifactError(
+                f"Artifact mismatch: scaler expects {expected} features but "
+                f"{feat_path} lists {len(self.feature_cols)}. These artifacts "
+                "are from different training runs; retrain to regenerate a "
+                "consistent set."
+            )
+
+        # Anomaly layer (optional -- may not exist if --no_anomaly was used)
         self.iforest     = None
         self.autoencoder = None
         self.if_threshold  = None
@@ -309,11 +366,15 @@ class IDSArtifacts:
                     self.if_threshold = thresholds["if_threshold"]
                     self.ae_threshold = thresholds["ae_threshold"]
                 self.anomaly_ready = True
-                print("  Anomaly layer: ✓ (IsolationForest + Autoencoder)")
+                # ASCII only. A Unicode tick here raised UnicodeEncodeError on
+                # a Windows cp1252 console, which the except below swallowed --
+                # printing "Could not load anomaly artifacts" for a layer that
+                # had in fact loaded correctly.
+                print("  Anomaly layer: OK (IsolationForest + Autoencoder)")
             except Exception as e:
                 print(f"  [WARN] Could not load anomaly artifacts: {e}")
         else:
-            print("  Anomaly layer: ✗ (artifacts not found — run without --no_anomaly)")
+            print("  Anomaly layer: MISSING (artifacts not found - run without --no_anomaly)")
 
         print(f"  Model      : {type(self.model).__name__}")
         print(f"  Features   : {len(self.feature_cols)}")
@@ -326,6 +387,41 @@ class IDSArtifacts:
     @property
     def feature_columns(self):
         return self.feature_cols
+
+
+def load_anomaly_layer(
+    iforest_path:    str = IFOREST_PATH,
+    ae_path:         str = AE_PATH,
+    thresholds_path: str = THRESHOLDS_PATH,
+) -> tuple:
+    """Load the optional anomaly layer.
+
+    Returns ``(iforest, autoencoder, if_threshold, ae_threshold)``, all None
+    when the layer is unavailable. Unlike the supervised artifacts this is
+    genuinely optional -- supervised-only detection is degraded but still
+    correct, so a missing anomaly layer warns rather than raises.
+    """
+    if not (os.path.exists(iforest_path) and os.path.exists(ae_path)):
+        return (None, None, None, None)
+    try:
+        iforest     = joblib.load(iforest_path)
+        autoencoder = joblib.load(ae_path)
+        if_threshold = ae_threshold = None
+        if os.path.exists(thresholds_path):
+            with open(thresholds_path) as fh:
+                thresholds = json.load(fh)
+            if_threshold = thresholds.get("if_threshold")
+            ae_threshold = thresholds.get("ae_threshold")
+        if if_threshold is None or ae_threshold is None:
+            print(
+                f"  [WARN] {thresholds_path} is missing if_threshold/"
+                "ae_threshold; anomaly layer disabled."
+            )
+            return (None, None, None, None)
+        return (iforest, autoencoder, if_threshold, ae_threshold)
+    except Exception as exc:
+        print(f"  [WARN] Could not load anomaly artifacts: {exc}")
+        return (None, None, None, None)
 
 
 def load_artifacts(
@@ -354,14 +450,73 @@ def load_artifacts(
 # 2. PREPROCESSING FOR INFERENCE
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _python_cicflowmeter_contract():
+    """Return (source->model rename map, features needing seconds->µs), or None.
+
+    The Python ``cicflowmeter`` package emits snake_case columns in SECONDS;
+    CICIDS2017 uses Title Case in MICROSECONDS. ``CICFLOW_ALIASES`` below only
+    ever covered the *Java* CICFlowMeter spellings, so a Python-cicflowmeter
+    CSV matched zero of the 42 model features and every one was zero-filled --
+    producing BENIGN at confidence 1.0 for an entire capture.
+
+    The mapping is imported from ``ingestion.flows.normalizer`` rather than
+    restated here. Two copies of a units table is precisely how the original
+    bug survived: one copy gets fixed and the other does not.
+    """
+    try:
+        from ingestion.flows.normalizer import (
+            FEATURE_SOURCE_MAP,
+            MICROSECOND_FEATURES,
+        )
+    except Exception:  # ingestion layer not installed -- Java path still works
+        return None
+    return (
+        {source: model for model, source in FEATURE_SOURCE_MAP.items()},
+        MICROSECOND_FEATURES,
+    )
+
+
+def _looks_like_python_cicflowmeter(columns) -> bool:
+    """Detect Python-cicflowmeter output by its distinctive snake_case names."""
+    present = {str(c).strip() for c in columns}
+    # These three appear together only in the Python implementation's schema.
+    return {"flow_duration", "tot_fwd_pkts", "fwd_pkt_len_max"} <= present
+
+
 def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     """
     Strip whitespace, apply CICFlowMeter alias map, drop label columns.
     Returns a clean DataFrame with standardised column names.
+
+    Handles three input dialects:
+      * CICIDS2017 / Java CICFlowMeter Title Case  (via CICFLOW_ALIASES)
+      * Python cicflowmeter snake_case in seconds  (renamed AND rescaled)
+      * already-normalised frames                  (pass through)
     """
     df = df.copy()
     # Strip whitespace from column names first
     df.columns = df.columns.str.strip()
+
+    # ── Python cicflowmeter: rename, then convert seconds -> microseconds ──
+    contract = _python_cicflowmeter_contract()
+    if contract is not None and _looks_like_python_cicflowmeter(df.columns):
+        source_to_model, microsecond_features = contract
+        df = df.rename(columns={
+            source: model
+            for source, model in source_to_model.items()
+            if source in df.columns
+        })
+        for feature in microsecond_features:
+            if feature in df.columns:
+                df[feature] = (
+                    pd.to_numeric(df[feature], errors="coerce").fillna(0.0)
+                    * 1_000_000.0
+                )
+        print(
+            f"[INFERENCE] Detected Python cicflowmeter output: renamed "
+            f"{len(source_to_model)} columns, converted "
+            f"{len(microsecond_features)} time features seconds -> microseconds."
+        )
 
     # Apply alias mapping
     rename_map = {}
@@ -383,10 +538,28 @@ def _normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+class FeatureCoverageError(ValueError):
+    """Raised when too few model features are present in the input.
+
+    Zero-filling a missing feature does not fail -- it produces a *confident
+    wrong* prediction, which nothing downstream can detect. This error makes
+    the failure visible at the boundary where it happens.
+    """
+
+
+# Below this fraction of matched features, a prediction is not meaningful.
+# The observed failure mode was 0.0 (no column names matched at all), so any
+# non-trivial floor catches it; 0.5 also catches half-mapped schemas.
+DEFAULT_MIN_FEATURE_COVERAGE = 0.5
+
+
 def preprocess_for_inference(
     df_raw: pd.DataFrame,
     feature_cols: list[str],
     scaler,
+    *,
+    min_coverage: float = 0.0,
+    context: str = "input",
 ) -> np.ndarray:
     """
     Align raw flow data to the model's feature schema, then scale.
@@ -395,8 +568,8 @@ def preprocess_for_inference(
     -----
     1. Normalise column names (strip spaces + apply CICFlowMeter aliases)
     2. Build aligned DataFrame with model's expected feature columns
-       (missing columns → zero-filled)
-    3. Coerce to numeric, replace inf/NaN → 0
+       (missing columns -> zero-filled)
+    3. Coerce to numeric, replace inf/NaN -> 0
     4. Apply trained StandardScaler
 
     This function works for all input types:
@@ -413,10 +586,31 @@ def preprocess_for_inference(
         columns=feature_cols,
     )
 
+    matched: list[str] = []
     for col in feature_cols:
         col_s = col.strip()
         if col_s in df.columns:
             aligned[col] = pd.to_numeric(df[col_s], errors="coerce").fillna(0.0)
+            matched.append(col)
+
+    # ── Coverage check ───────────────────────────────────────────────────────
+    # Everything not matched above is still sitting at its 0.0 initial value.
+    coverage = len(matched) / len(feature_cols) if feature_cols else 0.0
+    if coverage < 1.0:
+        missing = [c for c in feature_cols if c not in matched]
+        message = (
+            f"[INFERENCE] {context}: only {len(matched)}/{len(feature_cols)} "
+            f"model features matched ({coverage:.0%}); the remaining "
+            f"{len(missing)} were zero-filled. First missing: {missing[:5]}"
+        )
+        if coverage < min_coverage:
+            raise FeatureCoverageError(
+                f"{message}. Refusing to predict -- a mostly zero-filled "
+                "feature vector yields a confident, meaningless label. Check "
+                "that the input column names match "
+                "artifacts/feature_columns.json."
+            )
+        print(message)
 
     # Replace inf
     aligned = aligned.replace([float("inf"), float("-inf")], 0.0)
@@ -430,6 +624,102 @@ def preprocess_for_inference(
 # 3. PREDICTION (DUAL-LAYER)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@dataclass(frozen=True)
+class _ResolvedArtifacts:
+    """The pieces `_run_prediction` needs, however the caller supplied them."""
+
+    model:         Any
+    scaler:        Any
+    label_encoder: Any
+    feature_cols:  Any
+    iforest:       Any = None
+    autoencoder:   Any = None
+    if_threshold:  float | None = None
+    ae_threshold:  float | None = None
+
+    @property
+    def anomaly_ready(self) -> bool:
+        return (
+            self.iforest is not None
+            and self.autoencoder is not None
+            # Thresholds are required: `scores < None` raises TypeError, and
+            # treating a missing threshold as 0 would flag either everything
+            # or nothing.
+            and self.if_threshold is not None
+            and self.ae_threshold is not None
+        )
+
+
+def predict_supervised(
+    df_raw:       pd.DataFrame,
+    model:        Any,
+    scaler:       Any,
+    label_encoder: Any,
+    feature_cols: Any,
+    *,
+    return_proba: bool = True,
+    min_coverage: float = 0.0,
+    context:      str = "input",
+) -> pd.DataFrame:
+    """Layer 1 only: classify with the supervised model.
+
+    Use this when you genuinely have nothing but the four core artifacts.
+    Anything that has an artifacts container should call `predict_dual_layer`
+    instead -- supervised-only means a novel attack is confidently sorted into
+    the nearest known class with no second opinion.
+    """
+    return _run_prediction(
+        df_raw,
+        _ResolvedArtifacts(model, scaler, label_encoder, feature_cols),
+        return_proba=return_proba,
+        min_coverage=min_coverage,
+        context=context,
+    )
+
+
+def predict_dual_layer(
+    df_raw:    pd.DataFrame,
+    artifacts: Any,
+    *,
+    return_proba: bool = True,
+    min_coverage: float = 0.0,
+    context:      str = "input",
+) -> pd.DataFrame:
+    """Both layers: supervised classifier plus unsupervised anomaly detection.
+
+    `artifacts` is any object exposing `model`, `scaler`, `le`/`label_encoder`
+    and `feature_cols`/`feature_columns` -- both `inference.IDSArtifacts` and
+    `adapters.detection.ids_adapter.IDSArtifacts` qualify. The anomaly layer
+    runs when `iforest`, `autoencoder` and both thresholds are present, and is
+    skipped (supervised-only) otherwise.
+    """
+    return _run_prediction(
+        df_raw,
+        _resolve_artifacts(artifacts),
+        return_proba=return_proba,
+        min_coverage=min_coverage,
+        context=context,
+    )
+
+
+def _resolve_artifacts(artifacts: Any) -> _ResolvedArtifacts:
+    """Read the standard attribute names off an artifacts container."""
+    return _ResolvedArtifacts(
+        model=getattr(artifacts, "model", None),
+        scaler=getattr(artifacts, "scaler", None),
+        label_encoder=getattr(
+            artifacts, "le", getattr(artifacts, "label_encoder", None)
+        ),
+        feature_cols=getattr(
+            artifacts, "feature_cols", getattr(artifacts, "feature_columns", None)
+        ),
+        iforest=getattr(artifacts, "iforest", None),
+        autoencoder=getattr(artifacts, "autoencoder", None),
+        if_threshold=getattr(artifacts, "if_threshold", None),
+        ae_threshold=getattr(artifacts, "ae_threshold", None),
+    )
+
+
 def predict(
     df_raw:      pd.DataFrame,
     artifacts:   Any,
@@ -437,44 +727,71 @@ def predict(
     le:          Any = None,
     feature_cols: Any = None,
     return_proba: bool = True,
+    *,
+    min_coverage: float = 0.0,
+    context: str = "input",
 ) -> pd.DataFrame:
-    """
-    Full dual-layer inference pipeline. Accepts an IDSArtifacts container
-    or individual (model, scaler, le, feature_cols) positional arguments.
-    """
-    if scaler is not None and not isinstance(scaler, bool) and le is not None and feature_cols is not None:
-        model_obj     = artifacts
-        scaler_obj    = scaler
-        le_obj        = le
-        feat_cols     = feature_cols
-        actual_proba  = return_proba
-        anomaly_ready = False
-        iforest_obj   = None
-        ae_obj        = None
-    else:
-        actual_proba  = scaler if isinstance(scaler, bool) else return_proba
-        model_obj     = getattr(artifacts, "model", None)
-        scaler_obj    = getattr(artifacts, "scaler", None)
-        le_obj        = getattr(artifacts, "le", getattr(artifacts, "label_encoder", None))
-        feat_cols     = getattr(artifacts, "feature_cols", getattr(artifacts, "feature_columns", None))
-        anomaly_ready = getattr(artifacts, "anomaly_ready", False)
-        iforest_obj   = getattr(artifacts, "iforest", None)
-        ae_obj        = getattr(artifacts, "autoencoder", None)
-        if_thresh     = getattr(artifacts, "if_threshold", None)
-        ae_thresh     = getattr(artifacts, "ae_threshold", None)
+    """Backwards-compatible front door. Prefer the two explicit functions.
 
-    X = preprocess_for_inference(df_raw, feat_cols, scaler_obj)
+    This signature accepted either `predict(df, artifacts_container)` or
+    `predict(df, model, scaler, le, feature_cols)` and told them apart with
+    `isinstance(scaler, bool)` checks. The ambiguity was not cosmetic: the
+    unpacked form silently hard-coded `anomaly_ready = False`, so the adapter
+    that called it disabled the anomaly layer for every detection the platform
+    made, and nothing in the call site suggested that.
+
+    New code should call `predict_supervised` or `predict_dual_layer`, whose
+    names state which layers run.
+    """
+    positional_form = (
+        scaler is not None
+        and not isinstance(scaler, bool)
+        and le is not None
+        and feature_cols is not None
+    )
+    if positional_form:
+        return predict_supervised(
+            df_raw, artifacts, scaler, le, feature_cols,
+            return_proba=return_proba,
+            min_coverage=min_coverage,
+            context=context,
+        )
+
+    # Legacy quirk: `predict(df, artifacts, False)` passed return_proba third.
+    actual_proba = scaler if isinstance(scaler, bool) else return_proba
+    return predict_dual_layer(
+        df_raw, artifacts,
+        return_proba=actual_proba,
+        min_coverage=min_coverage,
+        context=context,
+    )
+
+
+def _run_prediction(
+    df_raw:    pd.DataFrame,
+    resolved:  _ResolvedArtifacts,
+    *,
+    return_proba: bool,
+    min_coverage: float,
+    context:      str,
+) -> pd.DataFrame:
+    """Shared body: preprocess, classify, optionally score anomalies."""
+    X = preprocess_for_inference(
+        df_raw, resolved.feature_cols, resolved.scaler,
+        min_coverage=min_coverage,
+        context=context,
+    )
 
     # ── Layer 1: Supervised ──────────────────────────────────────────────────
-    y_pred_enc = model_obj.predict(X)
-    y_pred     = le_obj.inverse_transform(y_pred_enc)
+    y_pred_enc = resolved.model.predict(X)
+    y_pred     = resolved.label_encoder.inverse_transform(y_pred_enc)
 
     results = pd.DataFrame({"prediction": y_pred}, index=df_raw.index)
 
-    if actual_proba and hasattr(model_obj, "predict_proba"):
-        proba = model_obj.predict_proba(X)
+    if return_proba and hasattr(resolved.model, "predict_proba"):
+        proba = resolved.model.predict_proba(X)
         results["confidence"] = proba.max(axis=1).round(4)
-        for i, cls in enumerate(le_obj.classes_):
+        for i, cls in enumerate(resolved.label_encoder.classes_):
             results[f"prob_{cls}"] = proba[:, i].round(4)
     else:
         results["confidence"] = 1.0
@@ -483,12 +800,12 @@ def predict(
     if_anomaly = np.zeros(len(X), dtype=bool)
     ae_anomaly = np.zeros(len(X), dtype=bool)
 
-    if anomaly_ready and iforest_obj is not None and ae_obj is not None:
-        if_scores  = iforest_obj.score_samples(X)
-        if_anomaly = if_scores < if_thresh
+    if resolved.anomaly_ready:
+        if_scores  = resolved.iforest.score_samples(X)
+        if_anomaly = if_scores < resolved.if_threshold
 
-        ae_errors  = ae_obj.reconstruction_error(X)
-        ae_anomaly = ae_errors > ae_thresh
+        ae_errors  = resolved.autoencoder.reconstruction_error(X)
+        ae_anomaly = ae_errors > resolved.ae_threshold
 
     results["if_anomaly"] = if_anomaly
     results["ae_anomaly"] = ae_anomaly
@@ -611,18 +928,18 @@ def translate_zeek_conn_log(df_zeek: pd.DataFrame) -> pd.DataFrame:
 
     Zeek conn.log coverage:
       ~15 of 52 CICIDS2017 features can be directly mapped or derived.
-      Remaining features are zero-filled.  The model degrades gracefully —
+      Remaining features are zero-filled.  The model degrades gracefully --
       tree-based models and the anomaly layer use whatever is available.
 
     Field mapping:
-      id.resp_p  → Destination Port
-      duration   → Flow Duration (seconds × 1e6 → microseconds)
-      orig_pkts  → Total Fwd Packets
-      resp_pkts  → (Total Backward Packets — derived)
-      orig_bytes → Total Length of Fwd Packets
-      resp_bytes → (Total Length of Bwd Packets — derived)
-      history    → FIN/PSH/ACK flag counts (parsed)
-      duration + bytes → Flow Bytes/s, Flow Packets/s (derived)
+      id.resp_p  -> Destination Port
+      duration   -> Flow Duration (seconds × 1e6 -> microseconds)
+      orig_pkts  -> Total Fwd Packets
+      resp_pkts  -> (Total Backward Packets -- derived)
+      orig_bytes -> Total Length of Fwd Packets
+      resp_bytes -> (Total Length of Bwd Packets -- derived)
+      history    -> FIN/PSH/ACK flag counts (parsed)
+      duration + bytes -> Flow Bytes/s, Flow Packets/s (derived)
     """
     df = df_zeek.copy()
     out = pd.DataFrame(index=df.index)
@@ -632,7 +949,7 @@ def translate_zeek_conn_log(df_zeek: pd.DataFrame) -> pd.DataFrame:
 
     # ── Direct mappings ──────────────────────────────────────────────────────
     out["Destination Port"]            = _get("id.resp_p")
-    out["Flow Duration"]               = _get("duration") * 1_000_000  # s → µs
+    out["Flow Duration"]               = _get("duration") * 1_000_000  # s -> µs
     out["Total Fwd Packets"]           = _get("orig_pkts")
     out["Total Length of Fwd Packets"] = _get("orig_bytes")
 
@@ -675,11 +992,11 @@ def translate_zeek_conn_log(df_zeek: pd.DataFrame) -> pd.DataFrame:
                      "PSH Flag Count", "ACK Flag Count", "URG Flag Count"]:
             out[flag] = 0
 
-    # Init window sizes (not in basic conn.log → 0)
+    # Init window sizes (not in basic conn.log -> 0)
     out["Init_Win_bytes_forward"]  = 0.0
     out["Init_Win_bytes_backward"] = 0.0
 
-    # Fwd IAT / Bwd IAT (not in conn.log → 0)
+    # Fwd IAT / Bwd IAT (not in conn.log -> 0)
     for col in [
         "Fwd IAT Total", "Fwd IAT Mean", "Fwd IAT Std", "Fwd IAT Max", "Fwd IAT Min",
         "Bwd IAT Total", "Bwd IAT Mean", "Bwd IAT Std", "Bwd IAT Max", "Bwd IAT Min",
@@ -712,9 +1029,9 @@ def predict_csv(
     """
     Load a CSV, predict, save results.
 
-    input_type='auto'    → try CICFlowMeter normalisation, fallback to generic
-    input_type='cicflow' → explicitly treat as CICFlowMeter output
-    input_type='generic' → treat as pre-extracted CICIDS2017-format features
+    input_type='auto'    -> try CICFlowMeter normalisation, fallback to generic
+    input_type='cicflow' -> explicitly treat as CICFlowMeter output
+    input_type='generic' -> treat as pre-extracted CICIDS2017-format features
     """
     print(f"\n[BATCH] Loading CSV: {input_path}")
     df = load_cicflowmeter_csv(input_path)
@@ -724,7 +1041,7 @@ def predict_csv(
                           results.reset_index(drop=True)], axis=1)
     out_df.to_csv(output_path, index=False)
 
-    print(f"[BATCH] Predictions saved → {output_path}")
+    print(f"[BATCH] Predictions saved -> {output_path}")
     print("\n[BATCH] Prediction summary:")
     print(results["final_status"].value_counts().to_string())
     print("\n[BATCH] Attack type distribution:")
@@ -739,7 +1056,7 @@ def predict_csv(
 
 def predict_zeek_log(
     zeek_path:   str,
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
     artifacts:   Any = None,
     *args,
     **kwargs,
@@ -764,7 +1081,7 @@ def predict_zeek_log(
         out_df = pd.concat([df_zeek.reset_index(drop=True),
                              results.reset_index(drop=True)], axis=1)
         out_df.to_csv(output_path, index=False)
-        print(f"[ZEEK] Predictions saved → {output_path}")
+        print(f"[ZEEK] Predictions saved -> {output_path}")
 
     print("\n[ZEEK] Final status distribution:")
     print(results["final_status"].value_counts().to_string())
@@ -779,7 +1096,7 @@ def predict_zeek_log(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def predict_single(
-    flow_data:  Union[dict, list],
+    flow_data:  dict | list,
     artifacts:  IDSArtifacts,
 ) -> dict:
     """
@@ -795,7 +1112,7 @@ def predict_single(
           "is_anomaly":   False,
           "if_anomaly":   False,
           "ae_anomaly":   False,
-          "probabilities": {"BENIGN": 0.01, "DDOS": 0.97, …}
+          "probabilities": {"BENIGN": 0.01, "DDOS": 0.97, ...}
         }
     For a list: returns a list of the above.
     """
@@ -846,7 +1163,7 @@ def run_demo(artifacts: IDSArtifacts):
     Each record is crafted to look like a specific attack type.
     """
     print("\n" + "=" * 65)
-    print("INFERENCE DEMO — Synthetic Flow Samples")
+    print("INFERENCE DEMO -- Synthetic Flow Samples")
     print("=" * 65)
 
     records = {
@@ -999,7 +1316,7 @@ Examples:
     parser.add_argument("--artifact_dir", default=ARTIFACT_DIR,
                         help="Directory containing model artifacts")
     parser.add_argument("--model_name",   default=None,
-                        help="Use specific model (e.g. 'RandomForest' → model_RandomForest.pkl)")
+                        help="Use specific model (e.g. 'RandomForest' -> model_RandomForest.pkl)")
     args = parser.parse_args()
 
     # ── Load artifacts ───────────────────────────────────────────────────────
@@ -1030,7 +1347,7 @@ Examples:
         out = pd.concat([df.reset_index(drop=True),
                          results.reset_index(drop=True)], axis=1)
         out.to_csv(args.output, index=False)
-        print(f"\nPredictions saved → {args.output}")
+        print(f"\nPredictions saved -> {args.output}")
         print(results["final_status"].value_counts().to_string())
 
     if args.input:

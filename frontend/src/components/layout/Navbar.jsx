@@ -1,8 +1,22 @@
+import { useEffect, useState } from "react";
 import { Bell, Search, Menu, Shield } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useLiveFeed } from "../../hooks/useLiveFeed";
+import { getIngestionStatus } from "../../api/ingestionApi";
 
 export default function Navbar({ onMenuClick }) {
   const { alerts: liveAlerts, connected } = useLiveFeed(99);
+  const [capturing, setCapturing] = useState(false);
+
+  useEffect(() => {
+    const poll = () =>
+      getIngestionStatus()
+        .then((s) => setCapturing(Boolean(s?.running)))
+        .catch(() => setCapturing(false));
+    poll();
+    const t = setInterval(poll, 10000);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <header style={{
@@ -58,25 +72,40 @@ export default function Navbar({ onMenuClick }) {
           />
         </div>
 
-        {/* Live feed status */}
-        <div style={{
-          display:"flex", alignItems:"center", gap:5,
-          padding:"0.3rem 0.625rem",
-          borderRadius:"var(--radius)",
-          background: connected ? "var(--green-dim)" : "var(--red-dim)",
-          border:`1px solid ${connected ? "rgba(16,185,129,0.25)" : "rgba(239,68,68,0.25)"}`,
-        }}>
-          {connected ? (
+        {/* Feed + capture status.
+            Reports what is actually true: CAPTURING only when a real capture
+            is running, FEED when the event stream is connected but no capture
+            is tapping an interface, OFFLINE when neither. A badge that always
+            reads LIVE tells an analyst nothing. */}
+        <Link
+          to="/live"
+          title={
+            capturing ? "Capturing live network traffic"
+              : connected ? "Event feed connected — no capture running"
+              : "Event feed disconnected"
+          }
+          style={{
+            display:"flex", alignItems:"center", gap:5,
+            padding:"0.3rem 0.625rem",
+            borderRadius:"var(--radius)",
+            background: capturing ? "var(--green-dim)" : connected ? "var(--accent-dim)" : "var(--red-dim)",
+            border:`1px solid ${capturing ? "rgba(16,185,129,0.25)" : connected ? "var(--border-accent)" : "rgba(239,68,68,0.25)"}`,
+          }}
+        >
+          {capturing || connected ? (
             <div className="live-dot" style={{ width:10, height:10 }}>
               <span className="live-dot-core" style={{ width:5, height:5 }} />
             </div>
           ) : (
             <span style={{ width:5, height:5, borderRadius:"50%", background:"var(--red)", display:"inline-block" }} />
           )}
-          <span style={{ fontSize:10, fontWeight:600, color: connected ? "var(--green)" : "var(--green)" }}>
-            {connected ? "LIVE" : "LIVE"}
+          <span style={{
+            fontSize:10, fontWeight:600,
+            color: capturing ? "var(--green)" : connected ? "var(--accent-bright)" : "var(--red)",
+          }}>
+            {capturing ? "CAPTURING" : connected ? "FEED" : "OFFLINE"}
           </span>
-        </div>
+        </Link>
 
         {/* Bell */}
         <button style={{

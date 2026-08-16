@@ -1,9 +1,9 @@
 const STEPS = ["Attack Detected","Threat Score Calculated","AI Analysis Generated","Response Executed"];
 
 export default function Timeline({ alert }) {
-  const items = alert
-    ? STEPS.map((event, i) => ({ event, time: i===0 ? alert.time : "—" }))
-    : [];
+  const items = alert?.timeline?.length
+    ? alert.timeline.map((item) => ({ event: item.title, time: item.time || "—", detail: item.detail }))
+    : (alert ? STEPS.map((event, i) => ({ event, time: i===0 ? alert.time : "—", detail: "" })) : []);
 
   return (
     <div className="card" style={{ padding:"1.25rem" }}>
@@ -29,6 +29,7 @@ export default function Timeline({ alert }) {
                     <p style={{ fontSize:12, fontWeight:500, color:"var(--text-primary)" }}>{item.event}</p>
                     <span style={{ fontSize:10, color:"var(--text-secondary)", flexShrink:0 }}>{item.time}</span>
                   </div>
+                  {item.detail && <p style={{ fontSize:11, color:"var(--text-secondary)", marginTop:3 }}>{item.detail}</p>}
                 </div>
               </div>
             ))}

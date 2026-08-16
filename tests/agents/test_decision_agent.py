@@ -1,9 +1,12 @@
 """Unit and integration tests for DecisionAgent and DecisionResult schema."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from pydantic import ValidationError
 
+from agents.decision.decision_agent import DecisionAgent
+from agents.decision.deterministic import DeterministicDecisionEngine
 from cyber_surakshya.platform.actions.action_type import ActionType
 from cyber_surakshya.platform.audit.metadata import AuditMetadata
 from cyber_surakshya.platform.enums.detection_status import DetectionStatus
@@ -27,9 +30,6 @@ from cyber_surakshya.platform.schemas.decision_result import (
 from cyber_surakshya.platform.schemas.detection_result import DetectionResult
 from cyber_surakshya.platform.schemas.security_event import NetworkEndpoint, SecurityEvent
 from cyber_surakshya.platform.state import create_initial_state
-
-from agents.decision.decision_agent import DecisionAgent
-from agents.decision.deterministic import DeterministicDecisionEngine
 from memory.models import MemoryRecord, MemorySearchResult
 
 
@@ -122,6 +122,70 @@ def test_critical_risk_produces_block_ip():
     assert decision.requires_approval is False
     assert decision.approval_status == ApprovalStatus.AUTO_APPROVED
     assert decision.status == DecisionStatus.READY_FOR_EXECUTION
+
+
+def test_low_severity_detection_is_reported_not_contained():
+    """A low-consequence detection must still produce a decision.
+
+    Risk now reflects attack class rather than classifier confidence, so
+    reconnaissance scores around 40 and a low-confidence one lands under the
+    MEDIUM floor of the rate-limit rule. Before the catch-all rule existed,
+    such a detection matched nothing and make_decision raised
+    PolicyEvaluationError — a detected attack crashed the pipeline.
+    """
+    state, _, _, _ = _create_sample_harness(
+        severity=Severity.LOW,
+        risk_score_val=24.0,
+        status=DetectionStatus.DETECTED,
+        confidence=0.6,
+        predicted_label="PORTSCAN",
+    )
+    agent = DecisionAgent(decision_engine=DeterministicDecisionEngine())
+    res_state = agent(state.to_graph_state())
+
+    assert len(res_state["decision_results"]) == 1
+    decision: DecisionResult = res_state["decision_results"][0]
+
+    assert decision.policy_name == "low_severity_detected_notify"
+    assert decision.action.action_type == ActionType.NOTIFY_SOC
+    assert decision.priority == DecisionPriority.LOW
+    assert decision.requires_approval is False
+
+
+def test_benign_flow_from_repeat_offender_is_not_isolated():
+    """Prior incidents alone are not evidence of current malicious activity.
+
+    The repeat-offender rule carried no detection-status condition, so a
+    BENIGN flow from an IP with two prior records proposed isolating the host.
+    """
+    state, _, _, _ = _create_sample_harness(
+        severity=Severity.INFO,
+        risk_score_val=0.0,
+        status=DetectionStatus.BENIGN,
+        confidence=0.99,
+    )
+    mock_memory = MagicMock()
+    mock_memory.search.return_value = [
+        MemorySearchResult(
+            record=MemoryRecord(
+                record_type="threat_event",
+                entity_id="192.168.1.50",
+                content={"event": "prior attack"},
+            ),
+            score=1.0,
+        )
+        for _ in range(3)
+    ]
+
+    agent = DecisionAgent(
+        decision_engine=DeterministicDecisionEngine(),
+        memory_provider=mock_memory,
+    )
+    res_state = agent(state.to_graph_state())
+
+    decision: DecisionResult = res_state["decision_results"][0]
+    assert decision.action.action_type == ActionType.LOG_ONLY
+    assert decision.policy_name == "benign_log_only"
 
 
 def test_repeat_offender_produces_isolate():
@@ -222,6 +286,8 @@ def test_approval_lifecycle_validation():
     with pytest.raises(ValidationError):
         # Invalid combination: requires_approval=True with AUTO_APPROVED
         state, _, _, ana = _create_sample_harness()
+        agent = DecisionAgent(decision_engine=DeterministicDecisionEngine())
+        res_state = agent(state.to_graph_state())
         DecisionResult(
             analysis_id=ana.analysis_id,
             detection_id=ana.detection_id,
@@ -267,15 +333,46 @@ def test_decision_duration_ms_recorded():
     assert decision.decision_duration_ms >= 0.0
 
 
+def _real_attack_profile(label: str = "DDOS") -> dict[str, float]:
+    """Load a complete 42-feature median vector for one class.
+
+    The end-to-end test used to hand the real model three features
+    ({Destination Port, Flow Duration, Total Fwd Packets}), leaving 39
+    zero-filled. That is not an end-to-end test of detection — it is a test
+    that the pipeline does not crash on a fabricated vector. The adapter now
+    refuses such input, so the test uses a real profile.
+    """
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "artifacts" / "attack_profiles.json"
+    if not path.exists():
+        pytest.skip(
+            "artifacts/attack_profiles.json missing; generate it with "
+            "python scripts/build_attack_profiles.py"
+        )
+    profiles = json.loads(path.read_text(encoding="utf-8"))["profiles"]
+    if label not in profiles:
+        pytest.skip(f"profile {label!r} not present in attack_profiles.json")
+    return profiles[label]
+
+
 def test_end_to_end_graph_pipeline():
+    from adapters.detection.ids_adapter import IDSDetectionAdapter
+    from agents.analysis.analysis_agent import AnalysisAgent
+    from agents.detection.detection_agent import DetectionAgent
+    from ai_engine.deterministic import DeterministicRuleEngine
     from graph.builder import GraphBuilder
     from graph.runtime import GraphRuntime
-    from adapters.detection.ids_adapter import IDSDetectionAdapter
-    from agents.detection.detection_agent import DetectionAgent
-    from agents.analysis.analysis_agent import AnalysisAgent
-    from ai_engine.deterministic import DeterministicRuleEngine
+    from inference import ArtifactError
 
-    adapter = IDSDetectionAdapter()
+    features = _real_attack_profile("DDOS")
+
+    try:
+        adapter = IDSDetectionAdapter()
+        adapter._get_artifacts()
+    except ArtifactError as exc:
+        pytest.skip(f"IDS artifacts unavailable: {exc}")
     builder = GraphBuilder()
     builder.register_node("detection", DetectionAgent(adapter))
     builder.register_node("analysis", AnalysisAgent(DeterministicRuleEngine()))
@@ -294,14 +391,20 @@ def test_end_to_end_graph_pipeline():
         risk_score=RiskScore(value=0.0),
         title="Simulated Flow",
         network=NetworkEndpoint(source_ip="192.168.1.100", destination_ip="10.0.0.1", destination_port=80),
-        features={"Destination Port": 80, "Flow Duration": 50, "Total Fwd Packets": 5000},
+        features=features,
         audit=AuditMetadata(created_by="sim", updated_by="sim", source_system="test")
     )
     state.security_events.append(event)
 
     output_state = runtime.execute(state)
 
+    assert output_state.errors == []
     assert len(output_state.detection_results) == 1
     assert len(output_state.analysis_results) == 1
     assert len(output_state.decision_results) == 1
     assert output_state.decision_results[0].analysis_id == output_state.analysis_results[0].analysis_id
+    # A real DDoS median vector must actually be detected as an attack —
+    # the previous version asserted only that three objects were produced,
+    # which a zero-filled vector classified as BENIGN also satisfied.
+    assert output_state.detection_results[0].predicted_label == "DDOS"
+    assert output_state.detection_results[0].status == DetectionStatus.DETECTED

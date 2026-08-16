@@ -21,7 +21,6 @@ from cyber_surakshya.platform.schemas.detection_result import DetectionResult
 from cyber_surakshya.platform.schemas.security_event import SecurityEvent
 from memory.models import MemorySearchResult
 
-
 # ── Input context ─────────────────────────────────────────────────────────────
 
 

@@ -1,0 +1,1053 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0}img,svg{max-width:100%}</style>
+<title>Cyber Surakshya — System Flow Schematics</title>
+<style>
+  /* ─────────────────────────────────────────────────────────────
+     Tokens. Light palette on bare :root; dark redefines tokens only.
+     Schematic sheets stay light in both themes — the diagrams are
+     treated as printed sheets inset into the page, which keeps every
+     node chip legible regardless of the viewer's ground.
+     ───────────────────────────────────────────────────────────── */
+  :root {
+    --bg:        #f6f7fa;
+    --surface:   #ffffff;
+    --sheet:     #eef1f6;
+    --sheet-rule:#c9d1de;
+
+    --ink:       #131922;
+    --ink-soft:  #3c4655;
+    --muted:     #5f6a7a;
+    --rule:      #dfe4ec;
+
+    --accent:    #0f766e;   /* live runtime path */
+    --accent-bg: #dceeec;
+    --offline:   #8a6416;   /* build-time / offline track */
+    --offline-bg:#f5e9d2;
+    --danger:    #a32c34;   /* enforcement, refusal, denial */
+    --danger-bg: #f7dedf;
+
+    --shadow:    0 1px 2px rgba(19,25,34,.05), 0 8px 24px -16px rgba(19,25,34,.28);
+
+    --font-display: "Segoe UI Variable Display", "Segoe UI", -apple-system,
+                    BlinkMacSystemFont, system-ui, sans-serif;
+    --font-body:    "Iowan Old Style", "Palatino Linotype", Palatino,
+                    "Book Antiqua", Georgia, serif;
+    --font-mono:    ui-monospace, "Cascadia Mono", "SFMono-Regular",
+                    Consolas, "Liberation Mono", monospace;
+
+    --measure: 66ch;
+    --shell:   1120px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #0e131a;
+      --surface:   #161d27;
+      --sheet:     #e9edf3;
+      --sheet-rule:#39424f;
+
+      --ink:       #e2e8f1;
+      --ink-soft:  #b7c0cd;
+      --muted:     #8b95a5;
+      --rule:      #263040;
+
+      --accent:    #3fbfb0;
+      --accent-bg: #14312e;
+      --offline:   #d6a544;
+      --offline-bg:#33280f;
+      --danger:    #e8757a;
+      --danger-bg: #38181b;
+
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.9);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg:        #0e131a;
+    --surface:   #161d27;
+    --sheet:     #e9edf3;
+    --sheet-rule:#39424f;
+
+    --ink:       #e2e8f1;
+    --ink-soft:  #b7c0cd;
+    --muted:     #8b95a5;
+    --rule:      #263040;
+
+    --accent:    #3fbfb0;
+    --accent-bg: #14312e;
+    --offline:   #d6a544;
+    --offline-bg:#33280f;
+    --danger:    #e8757a;
+    --danger-bg: #38181b;
+
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.9);
+  }
+
+  /* ── Base ─────────────────────────────────────────────────── */
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    max-width: var(--shell);
+    margin: 0 auto;
+    padding: clamp(28px, 5vw, 68px) clamp(18px, 4vw, 40px) 96px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(40px, 5vw, 64px);
+  }
+
+  h1, h2, h3, h4 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+  p { margin: 0; max-width: var(--measure); }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ── Masthead ─────────────────────────────────────────────── */
+  .masthead { display: flex; flex-direction: column; gap: 18px; }
+  .masthead h1 {
+    font-size: clamp(34px, 5.6vw, 56px);
+    font-weight: 650;
+    letter-spacing: -.022em;
+    line-height: 1.04;
+  }
+  .masthead h1 span { color: var(--accent); }
+  .masthead .lede { font-size: 19px; color: var(--ink-soft); }
+
+  .factbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .factbar b { color: var(--ink); font-weight: 600; }
+
+  /* ── Sections ─────────────────────────────────────────────── */
+  section { display: flex; flex-direction: column; gap: 20px; }
+  .sec-head { display: flex; flex-direction: column; gap: 8px; }
+  .sec-head h2 {
+    font-size: clamp(23px, 2.7vw, 30px);
+    font-weight: 620;
+    letter-spacing: -.014em;
+  }
+  .sec-head .eyebrow { display: flex; align-items: center; gap: 10px; }
+  .sec-head .eyebrow::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  /* ── Schematic sheet ──────────────────────────────────────── */
+  .sheet {
+    background: var(--sheet);
+    border: 1px solid var(--sheet-rule);
+    border-radius: 4px;
+    padding: 20px 16px;
+    overflow-x: auto;
+    box-shadow: var(--shadow);
+  }
+  .sheet pre.mermaid {
+    margin: 0;
+    background: none;
+    min-width: min-content;
+    text-align: center;
+  }
+  .sheet-cap {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: .05em;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+
+  /* ── Legend ───────────────────────────────────────────────── */
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .legend > div {
+    background: var(--surface);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .swatch {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .swatch i {
+    width: 15px; height: 15px;
+    border-radius: 3px;
+    border: 1.5px solid currentColor;
+    flex: none;
+  }
+  .sw-run   { color: var(--accent); } .sw-run   i { background: var(--accent-bg); }
+  .sw-off   { color: var(--offline); } .sw-off  i { background: var(--offline-bg); }
+  .sw-guard { color: var(--danger); } .sw-guard i { background: var(--danger-bg); }
+  .sw-store { color: var(--muted); }  .sw-store i { background: var(--rule); }
+  .legend p { font-size: 14.5px; color: var(--ink-soft); line-height: 1.5; }
+
+  /* ── Notes / callouts ─────────────────────────────────────── */
+  .note {
+    border-left: 3px solid var(--accent);
+    padding: 2px 0 2px 18px;
+    color: var(--ink-soft);
+    font-size: 16px;
+  }
+  .note.warn { border-left-color: var(--danger); }
+  .note.off  { border-left-color: var(--offline); }
+  .note strong { color: var(--ink); font-weight: 600; }
+
+  /* ── Tables ───────────────────────────────────────────────── */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--surface);
+  }
+  th {
+    text-align: left;
+    font-size: 10.5px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    color: var(--ink-soft);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  td .desc { font-family: var(--font-body); font-size: 14.5px; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: .88em;
+    background: var(--accent-bg);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ── Stage cards ──────────────────────────────────────────── */
+  .stages {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+    gap: 14px;
+  }
+  .stage {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 2px solid var(--accent);
+    border-radius: 4px;
+    padding: 15px 17px 17px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .stage .n {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .stage h4 { font-size: 16px; font-weight: 620; letter-spacing: -.005em; }
+  .stage p { font-size: 14.5px; color: var(--ink-soft); line-height: 1.5; }
+  .stage .file {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: auto;
+    padding-top: 6px;
+    word-break: break-all;
+  }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .sheet { transition: box-shadow .2s ease; }
+  }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+</script>
+</head>
+<body>
+
+
+<div class="shell">
+
+  <!-- ══════════════ MASTHEAD ══════════════ -->
+  <header class="masthead">
+    <div class="eyebrow">Cyber Surakshya · architecture schematics</div>
+    <h1>How a packet becomes<br><span>a blocked IP</span></h1>
+    <p class="lede">
+      Every path through the platform, from the CICIDS2017 CSV that trains the model
+      to the containment action the ResponseAgent refuses to take without an analyst.
+      Nine schematics, drawn from the code as it stands on branch <code>surya</code>.
+    </p>
+    <div class="factbar">
+      <span><b>7</b> attack classes</span>
+      <span><b>6</b> agents</span>
+      <span><b>42</b> model features</span>
+      <span><b>3</b> ingress paths</span>
+      <span><b>40</b> HTTP endpoints</span>
+      <span><b>1</b> served model — <b>model_DNN.pkl</b></span>
+    </div>
+  </header>
+
+  <!-- ══════════════ LEGEND ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Reading the schematics</div>
+      <h2>Three tracks, colour-coded throughout</h2>
+    </div>
+    <div class="legend">
+      <div>
+        <span class="swatch sw-run"><i></i>Runtime</span>
+        <p>Runs on every request. The agent pipeline, the API layer, the live capture worker.</p>
+      </div>
+      <div>
+        <span class="swatch sw-off"><i></i>Build&nbsp;time</span>
+        <p>Run by hand, never at request time. Training, artifact generation, attack profiles.</p>
+      </div>
+      <div>
+        <span class="swatch sw-guard"><i></i>Enforcement</span>
+        <p>Gates that can refuse. Approval checks, the ActionGuard, trust tiers, error exits.</p>
+      </div>
+      <div>
+        <span class="swatch sw-store"><i></i>Storage</span>
+        <p>Anything that outlives a request: pickled artifacts, Redis streams, Qdrant + SQLite.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════ 1. MASTER ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Schematic 01 · the whole system</div>
+      <h2>Master map</h2>
+    </div>
+    <p>
+      The build-time track on the left produces artifacts that the runtime track loads
+      exactly once, at server boot. Nothing in the runtime track ever reads the dataset
+      or retrains — a fact worth holding onto, because it means every model change
+      requires a deliberate offline run and a server restart.
+    </p>
+    <div class="sheet">
+<pre class="mermaid">
+flowchart TB
+  %%{init: {"theme":"base","themeVariables":{"fontFamily":"ui-monospace, Consolas, monospace","fontSize":"13px","lineColor":"#7b8698","textColor":"#1b2330","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"basis","nodeSpacing":38,"rankSpacing":46}}}%%
+
+  subgraph BUILD["◇ BUILD TIME — run by hand"]
+    direction TB
+    RAW[("data/cicids2017_cleaned.csv<br/>2,520,751 flows · 53 cols")]
+    PRE["preprocess.py<br/>clean · ANOVA top-40 · hybrid balance"]
+    TRN["train.py<br/>RF · HistGB · DNN · Voting<br/>IsolationForest · Autoencoder"]
+    BAP["scripts/build_attack_profiles.py<br/>per-class median vector"]
+    ART[("artifacts/<br/>model_*.pkl · scaler · label_encoder<br/>iforest · autoencoder · manifest.json")]
+    PROF[("attack_profiles.json<br/>7 × 42 features")]
+  end
+
+  subgraph INGRESS["◇ INGRESS — three doors"]
+    direction TB
+    UI["React dashboard<br/>frontend/ · Vite"]
+    NIC["Network interface<br/>dumpcap capture"]
+    UP["File upload<br/>CSV · Zeek conn.log"]
+  end
+
+  subgraph API["◇ API — FastAPI, app.py"]
+    direction TB
+    SEC["api/security.py<br/>X-API-Key gate"]
+    RT["api/runtime.py<br/>platform singleton"]
+    RTR["api/routers/ ×8<br/>alerts · response · learning · ..."]
+    PREDR["/predict*<br/>bypasses the agents"]
+  end
+
+  subgraph GRAPH["◇ ORCHESTRATION — LangGraph"]
+    direction TB
+    GR["GraphRuntime<br/>compile once, execute many"]
+    CO{{"CoordinatorAgent<br/>routing hub"}}
+    DET["DetectionAgent"]
+    ANA["AnalysisAgent"]
+    DEC["DecisionAgent"]
+    RES["ResponseAgent"]
+  end
+
+  subgraph ML["◇ ML CORE"]
+    direction TB
+    ADP["IDSDetectionAdapter"]
+    INF["inference.predict<br/>+ anomaly layer"]
+  end
+
+  subgraph STORE["◇ STATE"]
+    direction TB
+    MEM[("Qdrant + SQLite<br/>memory provider")]
+    RED[("Redis stream<br/>cs:flows")]
+    RING[("observability<br/>log ring buffer")]
+  end
+
+  LRN["LearningAgent<br/>out-of-band, over history"]
+  HUM(["SOC analyst"])
+
+  RAW --> PRE --> TRN --> ART
+  ART -.feature list.-> BAP
+  RAW --> BAP --> PROF
+
+  ART ==>|"boot"| RT
+  PROF ==>|"boot"| RT
+
+  UI --> SEC
+  UP --> SEC
+  SEC --> RTR
+  SEC --> PREDR
+  RT --> RTR
+  NIC ==> RED ==> RTR
+
+  PREDR --> INF
+  RTR ==> GR ==> CO
+  CO --> DET --> CO
+  CO --> ANA --> CO
+  CO --> DEC --> CO
+  CO --> RES --> CO
+
+  DET --> ADP --> INF
+  DET ==> MEM
+  ANA ==> MEM
+  DEC ==> MEM
+  RES ==> MEM
+  MEM --> LRN
+  LRN -.recommends.-> HUM
+  HUM -.feedback · approvals.-> RTR
+  RTR --> RING --> UI
+  CO ==>|"drained"| RTR ==>|"JSON · SSE"| UI
+
+  classDef build fill:#f5e9d2,stroke:#8a6416,stroke-width:1.4px,color:#4a3608
+  classDef run   fill:#dceeec,stroke:#0f766e,stroke-width:1.4px,color:#0b3a36
+  classDef store fill:#e2e7ef,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef edge  fill:#ffffff,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef hub   fill:#c6e5e1,stroke:#0f766e,stroke-width:2px,color:#08302c
+
+  class RAW,PRE,TRN,BAP,ART,PROF build
+  class SEC,RT,RTR,PREDR,GR,DET,ANA,DEC,RES,ADP,INF,LRN run
+  class MEM,RED,RING store
+  class UI,NIC,UP,HUM edge
+  class CO hub
+</pre>
+      <div class="sheet-cap">Thick arrows carry security events; thin arrows carry configuration, artifacts and advice.</div>
+    </div>
+    <p class="note off">
+      <strong>The two tracks meet at exactly one place:</strong> <code>ensure_runtime()</code> in
+      <code>api/runtime.py</code>, called once from the FastAPI lifespan handler. Retrain the model
+      or regenerate the profiles and nothing changes until the server restarts.
+    </p>
+  </section>
+
+  <!-- ══════════════ 2. BUILD TIME ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Schematic 02 · build time</div>
+      <h2>From CSV to artifacts</h2>
+    </div>
+    <p>
+      Two independent scripts read the same dataset. <code>train.py</code> produces the models;
+      <code>build_attack_profiles.py</code> produces the median feature vectors the simulator
+      replays. The second depends on the first only for <code>feature_columns.json</code>,
+      which tells it which 42 columns matter.
+    </p>
+    <div class="sheet">
+<pre class="mermaid">
+flowchart LR
+  %%{init: {"theme":"base","themeVariables":{"fontFamily":"ui-monospace, Consolas, monospace","fontSize":"13px","lineColor":"#7b8698","textColor":"#1b2330","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":52}}}%%
+
+  CSV[("cicids2017_cleaned.csv")]
+
+  subgraph P["preprocess.py"]
+    direction TB
+    L["stratified sample ≤500k"]
+    N["normalize_labels → 7 classes"]
+    C["clean: strip · coerce · median-fill inf/NaN · dedupe"]
+    F["select_features<br/>ANOVA F-score top-40 + Zeek priority"]
+    S["80/20 stratified split<br/>StandardScaler fit on train only"]
+    B["balance_classes · hybrid<br/>BENIGN cap · rare-class oversample"]
+    L --> N --> C --> F --> S --> B
+  end
+
+  subgraph T["train.py"]
+    direction TB
+    SUP["supervised<br/>RandomForest · HistGradientBoosting · MLP"]
+    VOTE["VotingClassifier · soft<br/>refits all bases"]
+    ANOM["anomaly layer, BENIGN rows only<br/>IsolationForest + NumpyAutoencoder"]
+    EVAL["evaluate_model<br/>macro F1 · per-class recall"]
+    SEL{{"select_best_model<br/>macro F1, floor 0.50 min-class recall"}}
+    SUP --> VOTE --> EVAL
+    SUP --> EVAL --> SEL
+  end
+
+  subgraph BP["build_attack_profiles.py"]
+    direction TB
+    STREAM["stream 200k-row chunks<br/>keep ≤50k rows per class"]
+    MED["median per feature per class"]
+    STREAM --> MED
+  end
+
+  ART[("artifacts/<br/>model.pkl · model_&lt;name&gt;.pkl<br/>scaler · label_encoder · feature_columns<br/>iforest · autoencoder · thresholds<br/>manifest.json · evaluation_report.txt")]
+  PROF[("attack_profiles.json")]
+  FIG[("figures/<br/>confusion matrices · feature importance")]
+
+  CSV --> L
+  CSV --> STREAM
+  B --> SUP
+  B --> ANOM
+  SEL --> ART
+  ANOM --> ART
+  EVAL --> FIG
+  MED --> PROF
+  ART -.feature_columns.json.-> STREAM
+
+  classDef build fill:#f5e9d2,stroke:#8a6416,stroke-width:1.4px,color:#4a3608
+  classDef store fill:#e2e7ef,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef gate  fill:#f7dedf,stroke:#a32c34,stroke-width:1.6px,color:#4d1216
+  class L,N,C,F,S,B,SUP,VOTE,ANOM,EVAL,STREAM,MED build
+  class CSV,ART,PROF,FIG store
+  class SEL gate
+</pre>
+      <div class="sheet-cap">The selection gate is drawn as enforcement because it can reject every model that scores well on the wrong metric.</div>
+    </div>
+    <p class="note warn">
+      <strong>Why the selection gate matters:</strong> RandomForest, GradientBoosting and the
+      VotingEnsemble all score above 0.99 weighted F1 while catching 8–10% of WEBATTACK.
+      Selecting on weighted F1 would promote one of them. The floor at 50% per-class recall
+      is what keeps the DNN in production.
+    </p>
+  </section>
+
+  <!-- ══════════════ 3. THREE DOORS ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Schematic 03 · runtime ingress</div>
+      <h2>Three doors, one pipeline — and one that skips it</h2>
+    </div>
+    <p>
+      Everything that becomes an alert enters as a <code>SecurityEvent</code> and goes through
+      the graph. The <code>/predict*</code> family is the exception: it calls the model directly
+      and returns raw predictions, producing no detection record, no alert, and no memory write.
+    </p>
+    <div class="sheet">
+<pre class="mermaid">
+flowchart TB
+  %%{init: {"theme":"base","themeVariables":{"fontFamily":"ui-monospace, Consolas, monospace","fontSize":"13px","lineColor":"#7b8698","textColor":"#1b2330","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"basis","nodeSpacing":30,"rankSpacing":44}}}%%
+
+  D1(["① Simulate<br/>dashboard button"])
+  D2(["② Live capture<br/>network interface"])
+  D3(["③ Upload<br/>Zeek conn.log"])
+  D4(["④ Direct score<br/>API client"])
+
+  E1["POST /simulation/simulate-attack<br/>random.choice over 7 profiles"]
+  E2["POST /ingestion/start<br/>background worker thread"]
+  E3["POST /simulation/upload-zeek<br/>first 50 rows"]
+  E4["POST /predict · /predict/csv · /predict/zeek"]
+
+  BUILD["SecurityEvent<br/>correlation_id · trace_id · 42 features<br/>NetworkEndpoint · AuditMetadata"]
+  ST["create_initial_state<br/>PlatformSharedState"]
+  EXEC["runtime.execute(state)"]
+  OUT["detection · analysis · decision · response<br/>projected to dashboard JSON"]
+
+  RAWP["inference.predict<br/>label · confidence · per-class probability"]
+
+  D1 --> E1 --> BUILD
+  D2 --> E2 --> BUILD
+  D3 --> E3 --> BUILD
+  D4 --> E4 --> RAWP
+
+  BUILD --> ST --> EXEC --> OUT
+
+  RAWP -.->|"no detection record<br/>no alert · no memory"| SKIP(["JSON response only"])
+
+  classDef run   fill:#dceeec,stroke:#0f766e,stroke-width:1.4px,color:#0b3a36
+  classDef edge  fill:#ffffff,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef store fill:#e2e7ef,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  class E1,E2,E3,E4,BUILD,ST,EXEC,RAWP run
+  class D1,D2,D3,D4,SKIP edge
+  class OUT store
+</pre>
+    </div>
+  </section>
+
+  <!-- ══════════════ 4. COORDINATOR ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Schematic 04 · orchestration</div>
+      <h2>The coordinator loop</h2>
+    </div>
+    <p>
+      The graph is a hub and spoke, not a chain. Every worker node returns to the coordinator,
+      which re-derives the work queue from state and picks the next stage. This is what lets a
+      single run drain N events — before the coordinator existed, a run processed exactly one
+      event and silently dropped the rest, because each agent handles one pending item per call.
+    </p>
+    <div class="sheet">
+<pre class="mermaid">
+flowchart TB
+  %%{init: {"theme":"base","themeVariables":{"fontFamily":"ui-monospace, Consolas, monospace","fontSize":"13px","lineColor":"#7b8698","textColor":"#1b2330","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"linear","nodeSpacing":36,"rankSpacing":40}}}%%
+
+  START((START)) --> CO
+
+  CO{{"coordinator<br/>build_work_queue · decide_route"}}
+
+  CO -->|"pending_detection"| DET["detection"]
+  CO -->|"pending_analysis"| ANA["analysis"]
+  CO -->|"pending_decision"| DEC["decision"]
+  CO -->|"pending_response<br/>or resumable"| RES["response"]
+  CO -->|"__end__"| FIN((END))
+
+  DET --> CO
+  ANA --> CO
+  DEC --> CO
+  RES --> CO
+
+  subgraph RULES["◇ decide_route — precedence, in order"]
+    direction TB
+    R1["1 · iteration budget exhausted → END"]
+    R2["2 · stage not registered → skip it"]
+    R3["3 · stage marked stalled → skip it"]
+    R4["4 · first PIPELINE_ORDER stage with pending work"]
+    R5["5 · decisions awaiting approval → response, once"]
+    R6["6 · nothing routable → END"]
+    R1 --- R2 --- R3 --- R4 --- R5 --- R6
+  end
+
+  STALL["detect_stall<br/>dispatched stage produced no new results<br/>→ exclude from further routing"]
+  MEMO[("CoordinatorMemo<br/>state.metadata['coordinator_agent']<br/>iteration · dispatches · stalled · anomalies")]
+
+  CO -.reads / writes.-> MEMO
+  CO -.each return.-> STALL -.marks.-> MEMO
+
+  classDef run   fill:#dceeec,stroke:#0f766e,stroke-width:1.4px,color:#0b3a36
+  classDef hub   fill:#c6e5e1,stroke:#0f766e,stroke-width:2px,color:#08302c
+  classDef store fill:#e2e7ef,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef gate  fill:#f7dedf,stroke:#a32c34,stroke-width:1.5px,color:#4d1216
+  classDef plain fill:#eef1f6,stroke:#9aa4b3,stroke-width:1px,color:#2b3442
+  class DET,ANA,DEC,RES run
+  class CO hub
+  class MEMO,START,FIN store
+  class STALL gate
+  class R1,R2,R3,R4,R5,R6 plain
+</pre>
+      <div class="sheet-cap">The memo lives in state metadata, not on the agent instance — agents are shared singletons across threads.</div>
+    </div>
+    <p class="note">
+      <strong>Stall detection is the anti-livelock guarantee.</strong> Agents swallow their own
+      exceptions and return without producing a result. A naive "route while work is pending"
+      loop would dispatch to a broken stage forever; instead the stage is excluded and the
+      reason is recorded as a run anomaly.
+    </p>
+  </section>
+
+  <!-- ══════════════ 5. AGENT STAGES ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Schematic 05 · the four pipeline stages</div>
+      <h2>What each agent turns into what</h2>
+    </div>
+    <div class="stages">
+      <div class="stage">
+        <span class="n">STAGE 01</span>
+        <h4>DetectionAgent</h4>
+        <p>Takes the first undetected SecurityEvent, scores it through the IDS adapter, emits a DetectionResult with label, confidence, risk score and severity.</p>
+        <span class="file">agents/detection/detection_agent.py</span>
+      </div>
+      <div class="stage">
+        <span class="n">STAGE 02</span>
+        <h4>AnalysisAgent</h4>
+        <p>Takes the first unanalysed detection, runs the DeterministicRuleEngine, emits evidence, a plain-language summary, reasoning and explicit uncertainty flags.</p>
+        <span class="file">agents/analysis/analysis_agent.py</span>
+      </div>
+      <div class="stage">
+        <span class="n">STAGE 03</span>
+        <h4>DecisionAgent</h4>
+        <p>Takes the first undecided analysis, matches it against policy rules, and emits an action, a priority, a rationale, and whether a human must approve it.</p>
+        <span class="file">agents/decision/decision_agent.py</span>
+      </div>
+      <div class="stage">
+        <span class="n">STAGE 04</span>
+        <h4>ResponseAgent</h4>
+        <p>Takes the first unresponded decision through the approval gate, the ActionGuard and the trust policy, then executes — or refuses, and says why.</p>
+        <span class="file">agents/response/response_agent.py</span>
+      </div>
+    </div>
+    <p class="note">
+      Every agent follows the same LangGraph node contract —
+      <code>__call__(state) -&gt; state</code> — and appends to an <code>operator.add</code>-reduced
+      list. Nodes return only their additions, never the whole state.
+    </p>
+  </section>
+
+  <!-- ══════════════ 6. DETECTION ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Schematic 06 · inside detection</div>
+      <h2>Supervised classifier plus a second opinion</h2>
+    </div>
+    <p>
+      The classifier answers "which of the seven classes is this". The anomaly layer, trained
+      on benign traffic only, answers a different question: "have I seen traffic shaped like
+      this before". When the classifier says BENIGN and the anomaly layer disagrees, the
+      detection is downgraded to INCONCLUSIVE rather than dismissed.
+    </p>
+    <div class="sheet">
+<pre class="mermaid">
+flowchart TB
+  %%{init: {"theme":"base","themeVariables":{"fontFamily":"ui-monospace, Consolas, monospace","fontSize":"13px","lineColor":"#7b8698","textColor":"#1b2330","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":40}}}%%
+
+  EV["SecurityEvent.features<br/>dict of 42 floats"]
+  VAL["_validate_flow_data"]
+  ALIGN["preprocess_for_inference<br/>align columns → zero-fill missing<br/>StandardScaler.transform"]
+
+  MODEL["model_DNN.pkl<br/>predict + predict_proba"]
+  IFOR["iforest.pkl<br/>score_samples &lt; if_threshold"]
+  AE["autoencoder.pkl<br/>recon error &gt; ae_threshold"]
+  ORG{{"OR gate<br/>is_anomaly"}}
+
+  DEC{{"_status_for"}}
+  B["BENIGN<br/>risk = 0"]
+  I["INCONCLUSIVE<br/>risk = confidence × 50"]
+  D["DETECTED<br/>risk = confidence × 100"]
+
+  SEV["severity_from_risk_score<br/>INFO · LOW · MEDIUM · HIGH · CRITICAL"]
+  RESLT["DetectionResult<br/>label · confidence · probabilities<br/>is_anomaly · feature_snapshot · audit"]
+
+  EV --> VAL --> ALIGN
+  ALIGN --> MODEL
+  ALIGN --> IFOR --> ORG
+  ALIGN --> AE --> ORG
+
+  MODEL --> DEC
+  ORG --> DEC
+
+  DEC -->|"label BENIGN,<br/>no anomaly"| B
+  DEC -->|"label BENIGN,<br/>anomaly fired"| I
+  DEC -->|"attack label,<br/>confidence &lt; threshold"| I
+  DEC -->|"attack label,<br/>confidence ≥ threshold"| D
+
+  B --> SEV
+  I --> SEV
+  D --> SEV --> RESLT
+
+  MISS["anomaly artifacts absent<br/>→ logged once, INCONCLUSIVE-on-anomaly<br/>becomes unreachable"]
+  IFOR -.if unavailable.-> MISS
+
+  classDef run   fill:#dceeec,stroke:#0f766e,stroke-width:1.4px,color:#0b3a36
+  classDef hub   fill:#c6e5e1,stroke:#0f766e,stroke-width:2px,color:#08302c
+  classDef store fill:#e2e7ef,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef gate  fill:#f7dedf,stroke:#a32c34,stroke-width:1.5px,color:#4d1216
+  class EV,VAL,ALIGN,MODEL,IFOR,AE,SEV,B,I,D run
+  class ORG,DEC hub
+  class RESLT store
+  class MISS gate
+</pre>
+    </div>
+  </section>
+
+  <!-- ══════════════ 7. RESPONSE ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Schematic 07 · enforcement</div>
+      <h2>Four gates before anything is executed</h2>
+    </div>
+    <p>
+      This is the only part of the platform that acts on the outside world, so it is the only
+      part built to refuse. A decision passes through a rejection check, a decision-level
+      approval gate, the ActionGuard, and an idempotency check — and each refusal is recorded
+      as a ResponseResult with the verdict, the rule that fired, and the reason.
+    </p>
+    <div class="sheet">
+<pre class="mermaid">
+flowchart TB
+  %%{init: {"theme":"base","themeVariables":{"fontFamily":"ui-monospace, Consolas, monospace","fontSize":"13px","lineColor":"#7b8698","textColor":"#1b2330","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"basis","nodeSpacing":30,"rankSpacing":36}}}%%
+
+  IN["DecisionResult<br/>action · target · requires_approval"]
+
+  G1{"① human ruling<br/>rejected?"}
+  G2{"② requires_approval<br/>and not approved?"}
+  G3{"③ ActionGuard<br/>trust tier · protected targets · blast radius"}
+  G4{"④ idempotency key<br/>already executed?"}
+
+  EXE["executor registry<br/>SimulatedContainmentExecutor<br/>NotificationExecutor"]
+
+  R_DENY["status REJECTED<br/>verdict DENY"]
+  R_WAIT["status AWAITING_APPROVAL<br/>resumable by the coordinator"]
+  R_DUP["duplicate suppressed<br/>links to prior response_id"]
+  R_OK["status EXECUTED<br/>verdict ALLOW or DOWNGRADE"]
+
+  APPR[("approval store<br/>Memory or InMemory")]
+  HUM(["SOC analyst<br/>POST /response/actions/{id}/approve"])
+
+  IN --> G1
+  G1 -->|"yes"| R_DENY
+  G1 -->|"no"| G2
+  G2 -->|"yes"| R_WAIT
+  G2 -->|"no"| G3
+  G3 -->|"DENY"| R_DENY
+  G3 -->|"REQUIRE_APPROVAL"| R_WAIT
+  G3 -->|"ALLOW / DOWNGRADE"| G4
+  G4 -->|"yes"| R_DUP
+  G4 -->|"no"| EXE --> R_OK
+
+  HUM --> APPR --> G1
+  R_WAIT -.coordinator retries once.-> G1
+  R_OK -.revert available.-> IN
+
+  classDef run   fill:#dceeec,stroke:#0f766e,stroke-width:1.4px,color:#0b3a36
+  classDef gate  fill:#f7dedf,stroke:#a32c34,stroke-width:1.5px,color:#4d1216
+  classDef store fill:#e2e7ef,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef edge  fill:#ffffff,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  class IN,EXE,R_OK run
+  class G1,G2,G3,G4,R_DENY,R_WAIT,R_DUP gate
+  class APPR store
+  class HUM edge
+</pre>
+      <div class="sheet-cap">Only simulation-safe executors are registered. Nothing touches real infrastructure until an operator registers a real integration.</div>
+    </div>
+    <p class="note warn">
+      <strong>The decision engine cannot approve itself.</strong> A decision setting
+      <code>requires_approval=False</code> clears the decision-level gate but never substitutes
+      for a human where the trust policy demands one — the live approval store is consulted first.
+    </p>
+  </section>
+
+  <!-- ══════════════ 8. INGESTION ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Schematic 08 · live capture</div>
+      <h2>Wire to alert, in one worker thread</h2>
+    </div>
+    <p>
+      The capture side and the pipeline side are decoupled by a Redis stream, and authenticate
+      as separate ACL users. The service is constructed at boot but never started —
+      beginning a packet capture is a privileged act that has to be an explicit operator decision.
+    </p>
+    <div class="sheet">
+<pre class="mermaid">
+flowchart LR
+  %%{init: {"theme":"base","themeVariables":{"fontFamily":"ui-monospace, Consolas, monospace","fontSize":"13px","lineColor":"#7b8698","textColor":"#1b2330","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"basis","nodeSpacing":28,"rankSpacing":44}}}%%
+
+  NIC(["network interface"])
+
+  subgraph CAP["◇ capture side · producer ACL"]
+    direction TB
+    SESS["CaptureSession<br/>local or docker dumpcap<br/>rotating pcap files"]
+    RETN["sweep_retention<br/>delete aged captures"]
+    READY["ready_files<br/>closed pcaps only"]
+    CFM["cicflowmeter<br/>pcap → flow CSV"]
+    NORM["FlowNormalizer<br/>strict 42-feature contract"]
+    PROD["FlowProducer"]
+    SESS --> READY --> CFM --> NORM --> PROD
+    SESS -.-> RETN
+  end
+
+  RED[("Redis stream<br/>cs:flows")]
+
+  subgraph BR["◇ pipeline side · consumer ACL"]
+    direction TB
+    CONS["FlowConsumer"]
+    EB["EventBuilder<br/>flow → SecurityEvent"]
+    PB["PipelineBridge.run_once<br/>batch → runtime.execute"]
+    CONS --> EB --> PB
+  end
+
+  GR["GraphRuntime<br/>coordinator budget applied"]
+  WORK["IngestionService worker loop<br/>poll · sweep · process · drain"]
+
+  NIC --> SESS
+  PROD ==> RED ==> CONS
+  PB ==> GR
+  WORK -.drives.-> SESS
+  WORK -.drives.-> PB
+
+  ERR["max_consecutive_errors reached<br/>→ stop and report unhealthy"]
+  WORK -.-> ERR
+
+  classDef run   fill:#dceeec,stroke:#0f766e,stroke-width:1.4px,color:#0b3a36
+  classDef store fill:#e2e7ef,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef gate  fill:#f7dedf,stroke:#a32c34,stroke-width:1.5px,color:#4d1216
+  classDef edge  fill:#ffffff,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  class SESS,RETN,READY,CFM,NORM,PROD,CONS,EB,PB,GR,WORK run
+  class RED store
+  class ERR gate
+  class NIC edge
+</pre>
+    </div>
+  </section>
+
+  <!-- ══════════════ 9. LEARNING ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Schematic 09 · the outer loop</div>
+      <h2>Learning runs over history, not over flows</h2>
+    </div>
+    <p>
+      The LearningAgent is deliberately not a pipeline node — as one it would re-derive
+      platform-wide metrics on every single flow. It reads the memory collections on demand,
+      and it recommends without executing. Its accuracy figures depend entirely on analyst
+      feedback, because the platform cannot detect its own false positives by introspection.
+    </p>
+    <div class="sheet">
+<pre class="mermaid">
+flowchart LR
+  %%{init: {"theme":"base","themeVariables":{"fontFamily":"ui-monospace, Consolas, monospace","fontSize":"13px","lineColor":"#7b8698","textColor":"#1b2330","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"basis","nodeSpacing":30,"rankSpacing":46}}}%%
+
+  MEM[("memory collections<br/>detections · analyses<br/>decisions · responses")]
+  FB[("analyst feedback<br/>POST /learning/feedback")]
+
+  subgraph LA["◇ LearningAgent.analyze — over a time window"]
+    direction TB
+    OC["OutcomeCollector<br/>join detections to feedback"]
+    ME["MetricsEngine<br/>precision · recall · FP rate"]
+    PD["PatternDiscovery<br/>recurring sources, labels, actions"]
+    RE["RecommendationEngine<br/>ranked, non-executing"]
+    OC --> ME --> PD --> RE
+  end
+
+  REP[("LearningReport<br/>stored, retrievable by /learning/report")]
+  UIP["Learning page<br/>metrics · patterns · recommendations"]
+  HUM(["SOC analyst"])
+
+  MEM --> OC
+  FB --> OC
+  RE --> REP --> UIP --> HUM
+  HUM ==>|"labels a detection<br/>true / false positive"| FB
+  HUM -.retrains by hand.-> RETRAIN["python train.py"]
+
+  classDef run   fill:#dceeec,stroke:#0f766e,stroke-width:1.4px,color:#0b3a36
+  classDef store fill:#e2e7ef,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef edge  fill:#ffffff,stroke:#6b7688,stroke-width:1.4px,color:#1b2330
+  classDef build fill:#f5e9d2,stroke:#8a6416,stroke-width:1.4px,color:#4a3608
+  class OC,ME,PD,RE,UIP run
+  class MEM,FB,REP store
+  class HUM edge
+  class RETRAIN build
+</pre>
+      <div class="sheet-cap">Automated retraining is deliberately out of scope. The agent recommends; humans apply.</div>
+    </div>
+  </section>
+
+  <!-- ══════════════ 10. FRONTEND MAP ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Reference · surface map</div>
+      <h2>Which page calls which endpoints</h2>
+    </div>
+    <p>
+      Twelve React pages, one axios client per domain, all authenticated with
+      <code>X-API-Key</code> read from <code>VITE_API_KEY</code>. Only <code>/health</code>
+      and the <code>/feed</code> SSE stream are public.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Page</th><th>API client</th><th>Endpoints</th><th>What it shows</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Dashboard</td><td>dashboardApi</td><td>/stats · /alerts · /feed</td><td class="desc">Counts, recent detections, live log stream</td></tr>
+          <tr><td>Simulation</td><td>simulationApi</td><td>/simulation/simulate-attack<br>/simulation/upload-zeek</td><td class="desc">Replays a median profile through the real pipeline</td></tr>
+          <tr><td>LiveCapture</td><td>ingestionApi</td><td>/ingestion/preflight · /interfaces<br>/start · /stop · /status</td><td class="desc">Starts and monitors the capture worker</td></tr>
+          <tr><td>Alerts</td><td>alertsApi</td><td>/alerts · /alerts/{id}/detail</td><td class="desc">Detection records; the alert id <em>is</em> the detection id</td></tr>
+          <tr><td>Response</td><td>responseApi</td><td>/response/actions · /pending-approvals<br>/approve · /reject · /policy</td><td class="desc">The approval queue and what the guard decided</td></tr>
+          <tr><td>BlockedIPs</td><td>blockedIpsApi</td><td>/blocked-ips</td><td class="desc">Containment actually executed, not assumed</td></tr>
+          <tr><td>Learning</td><td>learningApi</td><td>/learning/analyze · /report · /metrics<br>/patterns · /recommendations · /feedback</td><td class="desc">Outcome metrics and the feedback form</td></tr>
+          <tr><td>Agents</td><td>agentsApi</td><td>/agents · /agents/status</td><td class="desc">Which nodes are registered and healthy</td></tr>
+          <tr><td>Memory</td><td>memoryApi</td><td>/debug/memory</td><td class="desc">Raw collection contents</td></tr>
+          <tr><td>AlertDetail</td><td>analysesApi</td><td>/analyses/{id}</td><td class="desc">The AnalysisAgent's summary and evidence</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════ 11. STATE ══════════════ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Reference · where things live</div>
+      <h2>Four kinds of state, four lifetimes</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Store</th><th>Lifetime</th><th>Holds</th><th>Survives restart</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PlatformSharedState</td><td>one graph run</td><td class="desc">events, detections, analyses, decisions, responses, errors, coordinator memo</td><td>no</td></tr>
+          <tr><td>PlatformRuntime</td><td>process</td><td class="desc">model artifacts, graph runtime, attack profiles, services</td><td>no</td></tr>
+          <tr><td>Qdrant + SQLite</td><td>on disk</td><td class="desc">every agent result, approvals, feedback, learning reports</td><td>yes</td></tr>
+          <tr><td>Redis stream</td><td>bounded</td><td class="desc">normalized flows in transit from capture to pipeline</td><td>yes, until trimmed</td></tr>
+          <tr><td>artifacts/</td><td>until retrained</td><td class="desc">pickled models, scaler, encoder, thresholds, manifest</td><td>yes</td></tr>
+          <tr><td>log ring buffer</td><td>process</td><td class="desc">recent agent log records, streamed to /feed</td><td>no</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      <strong>The manifest is the contract.</strong> <code>artifacts/manifest.json</code> names
+      the served model, the selection rule that chose it, the dataset fingerprint and the
+      library versions — so which model is in production is an auditable choice rather than
+      a side effect of file ordering on disk.
+    </p>
+  </section>
+
+  <footer>
+    Drawn from the source on branch <b>surya</b> · train.py · preprocess.py · inference.py ·
+    api/ · agents/ · adapters/ · graph/ · ingestion/ · memory/ · frontend/<br>
+    Regenerate attack profiles after any retrain: <b>python scripts/build_attack_profiles.py</b>, then restart the server.
+  </footer>
+
+</div>
+
+</body>
+</html>

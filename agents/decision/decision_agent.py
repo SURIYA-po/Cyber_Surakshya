@@ -27,7 +27,6 @@ from agents.decision.base import DecisionContext, DecisionEngine
 from agents.decision.exceptions import (
     MissingDetectionError,
     MissingEventError,
-    NoPendingAnalysisError,
 )
 from cyber_surakshya.platform.audit.metadata import AuditMetadata
 from cyber_surakshya.platform.schemas.analysis_result import AnalysisResult
@@ -39,7 +38,7 @@ from cyber_surakshya.platform.schemas.detection_result import DetectionResult
 from cyber_surakshya.platform.schemas.security_event import SecurityEvent
 from cyber_surakshya.platform.state import PlatformSharedState, PlatformStateModel
 from memory.base import MemoryProvider
-from memory.models import MemoryQuery
+from memory.models import MemoryQuery, MemoryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +121,7 @@ class DecisionAgent:
             result = self._build_result(
                 draft, analysis, detection, event, state_model, duration_ms,
             )
+            self._store_memory(event, analysis, detection, result)
 
             logger.info(
                 "decision_agent_completed",
@@ -231,6 +231,74 @@ class DecisionAgent:
 
     # ── Result construction ───────────────────────────────────────────────────
 
+    def _store_memory(
+        self,
+        event: SecurityEvent,
+        analysis: AnalysisResult,
+        detection: DetectionResult,
+        result: DecisionResult,
+    ) -> None:
+        if self.memory_provider is None:
+            return
+        try:
+            record = MemoryRecord(
+                backend="qdrant_sqlite",
+                collection="decisions",
+                record_type="decision_result",
+                entity_id=self._extract_entity_id(event),
+                correlation_id=result.correlation_id,
+                trace_id=result.trace_id,
+                content={
+                    "decision_id": result.decision_id,
+                    "analysis_id": analysis.analysis_id,
+                    "detection_id": detection.detection_id,
+                    "event_id": result.event_id,
+                    "action_type": result.action.action_type.value,
+                    # What the action is aimed at. Without the target, a
+                    # persisted decision says "block" without saying "block
+                    # what", and the dashboard cannot show the recommendation
+                    # without re-deriving it from the alert.
+                    "action_target_type": result.action.target.target_type,
+                    "action_target_value": result.action.target.target_value,
+                    "priority": result.priority.value,
+                    "status": result.status.value,
+                    "requires_approval": result.requires_approval,
+                    "approval_status": result.approval_status.value,
+                    "confidence": result.confidence,
+                    # The engine's stated reason for this action. Dropping it
+                    # meant the frontend had no recommendation text to show, so
+                    # it shipped five hardcoded strings — including "Block the
+                    # source IP immediately" on benign alerts.
+                    "rationale": result.rationale,
+                    "policy_name": result.policy_name,
+                    "policy_version": result.policy_version,
+                    # Provenance: which engine decided, and at what version.
+                    "decision_engine": result.decision_engine,
+                    "engine_version": result.engine_version,
+                    "memory_hits": result.memory_hits,
+                    # Stage timestamp for LearningAgent pipeline-latency metrics.
+                    "decided_at": result.decided_at.isoformat(),
+                },
+                metadata={
+                    "agent": self.agent_name,
+                    "analysis_id": analysis.analysis_id,
+                    "detection_id": detection.detection_id,
+                    # The edge ResponseResult hangs from, completing the
+                    # detection -> analysis -> decision -> response chain in
+                    # metadata so each hop is a query rather than a scan.
+                    "decision_id": result.decision_id,
+                    "event_id": result.event_id,
+                    "policy": result.policy_name,
+                },
+                tags=[self.agent_name, "decision"],
+            )
+            self.memory_provider.store("decisions", record)
+        except Exception as exc:
+            logger.warning(
+                "decision_agent_memory_store_failed",
+                extra={"agent": self.agent_name, "error": str(exc)},
+            )
+
     def _build_result(
         self,
         draft: Any,
@@ -286,22 +354,26 @@ class DecisionAgent:
         result: DecisionResult,
         analysis: AnalysisResult,
     ) -> PlatformSharedState:
+        metadata = self._merged_metadata(
+            state,
+            {
+                "status":             "completed",
+                "last_analysis_id":   analysis.analysis_id,
+                "last_decision_id":   result.decision_id,
+                "decision_count":     len(state.decision_results) + 1,
+                "engine":             self.decision_engine.engine_name,
+                "action_type":        result.action.action_type.value,
+                "requires_approval":  result.requires_approval,
+                "approval_status":    result.approval_status.value,
+                "policy_name":        result.policy_name,
+            },
+        )
         return PlatformSharedState(
+            correlation_id=state.correlation_id,
+            trace_id=state.trace_id,
+            session_id=state.session_id,
             decision_results=[result],
-            metadata=self._merged_metadata(
-                state,
-                {
-                    "status":             "completed",
-                    "last_analysis_id":   analysis.analysis_id,
-                    "last_decision_id":   result.decision_id,
-                    "decision_count":     len(state.decision_results) + 1,
-                    "engine":             self.decision_engine.engine_name,
-                    "action_type":        result.action.action_type.value,
-                    "requires_approval":  result.requires_approval,
-                    "approval_status":    result.approval_status.value,
-                    "policy_name":        result.policy_name,
-                },
-            ),
+            metadata=metadata,
         )
 
     def _metadata_update(
@@ -312,6 +384,9 @@ class DecisionAgent:
         reason: str,
     ) -> PlatformSharedState:
         return PlatformSharedState(
+            correlation_id=state.correlation_id,
+            trace_id=state.trace_id,
+            session_id=state.session_id,
             metadata=self._merged_metadata(
                 state,
                 {
@@ -320,7 +395,7 @@ class DecisionAgent:
                     "engine": self.decision_engine.engine_name,
                     "decision_count": len(state.decision_results),
                 },
-            )
+            ),
         )
 
     def _error_update(
@@ -328,28 +403,38 @@ class DecisionAgent:
         state: PlatformSharedState,
         error: Exception,
     ) -> PlatformSharedState:
+        failure = {
+            "status":     "failed",
+            "error_type": type(error).__name__,
+            "engine":     self.decision_engine.engine_name,
+        }
+        # `state` is the raw graph TypedDict, never a PlatformStateModel, so
+        # the old isinstance guard always nulled these identifiers and the
+        # run failed validation on exit — one agent error killed the run.
         try:
             state_model = PlatformStateModel.from_graph_state(state)
-            metadata = self._merged_metadata(
-                state_model,
-                {
-                    "status":     "failed",
-                    "error_type": type(error).__name__,
-                    "engine":     self.decision_engine.engine_name,
-                },
-            )
+            metadata = self._merged_metadata(state_model, failure)
+            correlation_id = state_model.correlation_id
+            trace_id = state_model.trace_id
+            session_id = state_model.session_id
         except Exception:
-            metadata = {
-                self.agent_name: {
-                    "status":     "failed",
-                    "error_type": type(error).__name__,
-                    "engine":     self.decision_engine.engine_name,
-                }
-            }
-        return PlatformSharedState(
-            errors=[f"{self.agent_name}: {error}"],
-            metadata=metadata,
-        )
+            metadata = {self.agent_name: failure}
+            raw = state if isinstance(state, dict) else {}
+            correlation_id = raw.get("correlation_id")
+            trace_id = raw.get("trace_id")
+            session_id = raw.get("session_id")
+
+        update: PlatformSharedState = {
+            "errors": [f"{self.agent_name}: {error}"],
+            "metadata": metadata,
+        }
+        if correlation_id is not None:
+            update["correlation_id"] = correlation_id
+        if trace_id is not None:
+            update["trace_id"] = trace_id
+        if session_id is not None:
+            update["session_id"] = session_id
+        return update
 
     def _merged_metadata(
         self,

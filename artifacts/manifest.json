@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "generated_utc": "2026-08-08T03:21:12.224244+00:00",
+  "served_model": "model_DNN.pkl",
+  "served_model_name": "DNN",
+  "selection_rule": "highest macro F1 among models with per-class recall >= 50%",
+  "classes": [
+    "BENIGN",
+    "BOTNET",
+    "BRUTEFORCE",
+    "DDOS",
+    "DOS",
+    "PORTSCAN",
+    "WEBATTACK"
+  ],
+  "feature_count": 42,
+  "anomaly_layer": true,
+  "metrics": {
+    "RandomForest": {
+      "accuracy": 0.9942,
+      "f1_weighted": 0.9924,
+      "f1_macro": 0.8414,
+      "recall_macro": 0.8126,
+      "per_class_recall": {
+        "BENIGN": 0.9997,
+        "BOTNET": 0.6128,
+        "BRUTEFORCE": 1.0,
+        "DDOS": 0.9998,
+        "DOS": 0.9997,
+        "PORTSCAN": 0.9995,
+        "WEBATTACK": 0.0769
+      },
+      "min_class_recall": 0.0769,
+      "worst_class": "WEBATTACK"
+    },
+    "GradientBoosting": {
+      "accuracy": 0.9943,
+      "f1_weighted": 0.9925,
+      "f1_macro": 0.8447,
+      "recall_macro": 0.8153,
+      "per_class_recall": {
+        "BENIGN": 0.9995,
+        "BOTNET": 0.6128,
+        "BRUTEFORCE": 1.0,
+        "DDOS": 1.0,
+        "DOS": 0.9997,
+        "PORTSCAN": 0.9995,
+        "WEBATTACK": 0.0956
+      },
+      "min_class_recall": 0.0956,
+      "worst_class": "WEBATTACK"
+    },
+    "DNN": {
+      "accuracy": 0.9971,
+      "f1_weighted": 0.997,
+      "f1_macro": 0.9655,
+      "recall_macro": 0.9534,
+      "per_class_recall": {
+        "BENIGN": 0.9951,
+        "BOTNET": 0.7385,
+        "BRUTEFORCE": 0.9884,
+        "DDOS": 0.9996,
+        "DOS": 0.9996,
+        "PORTSCAN": 0.9993,
+        "WEBATTACK": 0.9534
+      },
+      "min_class_recall": 0.7385,
+      "worst_class": "BOTNET"
+    },
+    "VotingEnsemble": {
+      "accuracy": 0.9943,
+      "f1_weighted": 0.9926,
+      "f1_macro": 0.8464,
+      "recall_macro": 0.816,
+      "per_class_recall": {
+        "BENIGN": 0.9995,
+        "BOTNET": 0.6128,
+        "BRUTEFORCE": 1.0,
+        "DDOS": 0.9999,
+        "DOS": 0.9997,
+        "PORTSCAN": 0.9995,
+        "WEBATTACK": 0.1002
+      },
+      "min_class_recall": 0.1002,
+      "worst_class": "WEBATTACK"
+    }
+  },
+  "reproducibility": {
+    "dataset": {
+      "path": "cicids2017_cleaned.csv",
+      "available": true,
+      "size_bytes": 717247575,
+      "modified_utc": "2026-07-27T17:52:00.886805+00:00",
+      "head_sha256": "d6ad5ad196a4fbac4c3bd8d18f4f9830bb43504d6881d9cd6ec5c503ecdf1543",
+      "_note": "head_sha256 covers the first 1 MB only."
+    },
+    "config": {
+      "max_rows": 500000,
+      "top_k": 40,
+      "no_dnn": false,
+      "no_anomaly": false,
+      "balance_strategy": "hybrid"
+    },
+    "random_state": 42,
+    "python": "3.14.0",
+    "scikit_learn": "1.8.0",
+    "numpy": "2.4.4",
+    "joblib": "1.5.3",
+    "_note": "joblib.load requires a scikit-learn compatible with the version above. A major mismatch can fail to unpickle the estimator classes."
+  }
+}

@@ -1,0 +1,89 @@
+# Cyber Surakshya — ingestion infrastructure.
+#
+#   docker compose up -d redis          # stream transport
+#   docker compose --profile capture up -d   # + capture (LINUX HOSTS ONLY)
+#
+# The capture service is behind a profile deliberately. On Docker Desktop
+# (Windows/macOS) `network_mode: host` joins the Docker VM's network namespace,
+# not the machine's — a capture started there records container traffic while
+# every health check reads green. Use `capture.backend: local` there instead.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: cs-redis
+    restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    # Start as the redis user rather than starting as root and dropping.
+    # The image entrypoint checks `id -u` and only calls setpriv when it is
+    # root — and setpriv needs CAP_SETUID, which cap_drop: ALL removes. Being
+    # non-root from PID 1 is the stronger posture anyway: the capability is
+    # never held, not held-then-surrendered.
+    user: redis
+    volumes:
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./docker/redis/users.acl:/etc/redis/users.acl:ro
+      - redis-data:/data
+    # Published to loopback only. Never `6379:6379`, which binds every
+    # interface and puts the flow record on the local network.
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - cs-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-u", "redis://cs-observer:${REDIS_OBSERVER_PASSWORD:-dev-observer-password-change-me}@127.0.0.1:6379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  capture:
+    profiles: ["capture"]
+    build:
+      context: ./docker/capture
+    image: cyber-surakshya/capture:latest
+    container_name: cs-capture
+    restart: "no"
+    # Required to observe host traffic — and meaningless on Docker Desktop.
+    network_mode: host
+    # Never `privileged: true`. dumpcap needs exactly these two capabilities
+    # and drops them once the capture socket is open.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    user: pcap
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./captures:/captures
+    command:
+      - "-i"
+      - "${CAPTURE_INTERFACE:-eth0}"
+      - "-s"
+      - "96"                      # headers only; payloads never reach disk
+      - "-b"
+      - "duration:60"
+      - "-b"
+      - "files:120"               # 60 × 120 = 2 hours
+      - "-w"
+      - "/captures/cs.pcap"
+      - "-q"
+
+networks:
+  cs-internal:
+    driver: bridge
+
+volumes:
+  redis-data:

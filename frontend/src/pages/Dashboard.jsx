@@ -6,17 +6,36 @@ import ThreatStatus from "../components/panels/ThreatStatus";
 import RecentAlerts from "../components/panels/RecentAlerts";
 import AgentHealth from "../components/panels/AgentHealth";
 import ActivityTimeline from "../components/panels/ActivityTimeline";
+import PlatformStatus from "../components/panels/PlatformStatus";
 import ThreatTrendChart from "../components/charts/ThreatTrendChart";
 import AttackTypeChart from "../components/charts/AttackTypeChart";
 import SeverityChart from "../components/charts/SeverityChart";
 import { getStats } from "../api/dashboardApi";
 
 function buildCards(stats) {
+  const total   = stats.total_alerts ?? 0;
+  const sample  = stats.breakdown_sample_size ?? total;
+  const online  = stats.online_agents ?? 0;
+  const agents  = stats.total_agents ?? 0;
+
+  // The severity breakdown is computed over the newest page, not the whole
+  // history. Saying "0 critical" against a total of 999 would read as a fact
+  // about all 999, so the scope is stated whenever the sample is smaller.
+  const scoped = (text) => (sample < total ? `${text} (newest ${sample})` : text);
+
   return [
-    { id:1, title:"Total Alerts",    value:String(stats.total_alerts??0),         change:`${stats.severity_breakdown?.CRITICAL??0} critical`,       icon:ShieldAlert, accentColor:"#EF4444" },
-    { id:2, title:"Critical Threats",value:String(stats.severity_breakdown?.CRITICAL??0), change:`${stats.severity_breakdown?.HIGH??0} high`,           icon:ShieldCheck, accentColor:"#F59E0B" },
-    { id:3, title:"Online Agents",   value:`${stats.online_agents??0}/${stats.total_agents??0}`,      change:"all systems online",                                   icon:Server,      accentColor:"#10B981" },
-    { id:4, title:"Blocked IPs",     value:String(stats.total_blocked_ips??0),     change:`avg ${stats.average_confidence??0}% AI confidence`,        icon:Ban,         accentColor:"#3B82F6" },
+    { id:1, title:"Total Alerts",     value:String(total),
+      change:scoped(`${stats.severity_breakdown?.CRITICAL ?? 0} critical`),
+      icon:ShieldAlert, accentColor:"#EF4444" },
+    { id:2, title:"Critical Threats", value:String(stats.severity_breakdown?.CRITICAL ?? 0),
+      change:scoped(`${stats.severity_breakdown?.HIGH ?? 0} high`),
+      icon:ShieldCheck, accentColor:"#F59E0B" },
+    { id:3, title:"Online Agents",    value:`${online}/${agents}`,
+      change: online === agents && agents > 0 ? "all systems online" : `${agents - online} offline`,
+      icon:Server, accentColor: online === agents ? "#10B981" : "#F59E0B" },
+    { id:4, title:"Blocked IPs",      value:String(stats.total_blocked_ips ?? 0),
+      change:`avg ${stats.average_confidence ?? 0}% AI confidence`,
+      icon:Ban, accentColor:"#3B82F6" },
   ];
 }
 
@@ -55,6 +74,10 @@ export default function Dashboard() {
           Refresh
         </button>
       </div>
+
+      {/* Ingestion, approvals, and self-measurement — each links to the page
+          that can act on it. */}
+      <PlatformStatus />
 
       {/* Stat cards */}
       <div className="grid-cards" style={{ marginBottom:"1.5rem" }}>

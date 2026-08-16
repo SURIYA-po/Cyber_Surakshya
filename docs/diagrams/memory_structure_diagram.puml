@@ -1,0 +1,322 @@
+@startuml Cyber_Surakshya_Memory
+' ============================================================================
+'  Cyber Surakshya — Memory Management Structure
+'  Derived from memory/base.py, memory/models.py, memory/inmemory.py,
+'  memory/qdrant_sqlite.py, and the collection constants declared in agents/*
+' ============================================================================
+
+!theme plain
+skinparam shadowing false
+skinparam nodesep 25
+skinparam ranksep 45
+skinparam class {
+  BackgroundColor #FDFDFD
+  BorderColor #4A6FA5
+  ArrowColor #33475B
+}
+skinparam packageStyle rectangle
+hide circle
+
+title Cyber Surakshya — Memory Management Structure\n(Port / Adapter layering, logical collections, physical storage)
+
+' ================================================== LAYER 1 : WRITERS ======
+package "Layer 1 — Memory Writers (Agents)" #F4F8FD {
+  class DetectionAgent  <<agent>>
+  class AnalysisAgent   <<agent>>
+  class DecisionAgent   <<agent>>
+  class ResponseAgent   <<agent>>
+  class ApprovalStore   <<component>>
+  class FeedbackService <<component>>
+  class LearningAgent   <<agent>>
+  class OutcomeCollector <<component>>
+}
+
+' ================================================= LAYER 2 : THE PORT ======
+package "Layer 2 — Memory Abstraction (Port)" #FAF7FD {
+
+  interface MemoryProvider <<Protocol>> {
+    + store(collection, record) : MemoryRecord
+    + get(collection, record_id) : MemoryRecord?
+    + search(collection, query) : list<MemorySearchResult>
+    + update(collection, record) : MemoryRecord
+    + delete(collection, record_id) : bool
+    + exists(collection, record_id) : bool
+  }
+
+  class MemoryRecord <<model>> {
+    + record_id : str <<PK>> = uuid4()
+    --
+    backend : str [1..64] = "memory"
+    collection : str [1..128] = "custom"
+    record_type : str [1..128]
+    --
+    entity_id : str? [1..128]
+    correlation_id : str? <<UUID>>
+    trace_id : str? <<UUID>>
+    --
+    content : Any
+    metadata : dict<str, Any>
+    tags : list<str>
+    --
+    created_at : datetime (UTC)
+    updated_at : datetime (UTC)
+    --
+    <i>validators:</i>
+    - non-empty text fields
+    - correlation_id / trace_id must be UUIDs
+    - metadata keys must be non-empty
+    - tags de-duplicated & stripped
+    - naive datetimes coerced to UTC
+  }
+
+  class MemoryQuery <<model>> {
+    query_text : str?  <i>(semantic / vector)</i>
+    record_ids : list<str>?
+    record_types : list<str>?
+    entity_ids : list<str>?
+    correlation_id : str?
+    trace_id : str?
+    metadata : dict<str, Any>
+    tags : list<str>
+    created_after / created_before : datetime?
+    updated_after / updated_before : datetime?
+    order_by : {created_at | updated_at}
+    descending : bool = False
+    limit : int? >= 1
+  }
+
+  class MemorySearchResult <<model>> {
+    record : MemoryRecord
+    score : float? [0..1]
+  }
+
+  note right of MemoryRecord
+    **Decoupling rule.**
+    The memory layer never imports platform
+    schema classes. Domain objects are stored
+    by *reference* (entity_id, record_type)
+    and *serialised content*, so storage can
+    be swapped without touching the domain.
+  end note
+}
+
+' ============================================== LAYER 3 : THE ADAPTERS =====
+package "Layer 3 — Provider Implementations (Adapters)" #F5FBF4 {
+
+  class InMemoryMemoryProvider <<adapter>> {
+    - _store : dict<collection, dict<record_id, dict>>
+    - _lock : threading.RLock
+    --
+    + store() / get() / search()
+    + update() / delete() / exists()
+    --
+    <i>characteristics:</i>
+    - re-entrant lock guards every operation
+    - returns deep copies (no shared mutation)
+    - volatile: cleared on process restart
+    - used by the 446-test suite
+  }
+
+  class QdrantSqliteMemoryProvider <<adapter>> {
+    - _conn : sqlite3.Connection
+    - _qdrant : QdrantClient (embedded)
+    - _encoder : SentenceTransformer\n  ("all-MiniLM-L6-v2")
+    - _vector_size : int = 384
+    --
+    + store() / get() / search()
+    + update() / delete() / exists()
+    + close() / __enter__ / __exit__
+    --
+    <i>characteristics:</i>
+    - dual write: SQLite row + Qdrant point
+    - content embedded only when non-empty
+    - exact filters -> SQLite
+    - semantic query_text -> Qdrant (cosine)
+    - durable across restarts
+  }
+}
+
+' ============================================ LAYER 4 : PHYSICAL STORE =====
+package "Layer 4 — Physical Storage" #FDF6F6 {
+
+  entity "memory_records\n<i>(SQLite: memory_metadata.db)</i>" as SQLTable <<table>> {
+    + record_id : TEXT <<PK>>
+    --
+    collection : TEXT NOT NULL
+    backend : TEXT NOT NULL
+    record_type : TEXT NOT NULL
+    entity_id : TEXT
+    correlation_id : TEXT
+    trace_id : TEXT
+    content : TEXT <i>(JSON)</i>
+    metadata : TEXT <i>(JSON)</i>
+    tags : TEXT <i>(JSON)</i>
+    created_at : TEXT NOT NULL
+    updated_at : TEXT NOT NULL
+    --
+    <i>indexes:</i>
+    idx_memory_coll    ON (collection)
+    idx_memory_created ON (created_at)
+  }
+
+  entity "Qdrant Vector Store\n<i>(embedded: qdrant_db/)</i>" as QdrantStore <<vector store>> {
+    one Qdrant collection per
+    logical memory collection
+    --
+    point_id  : record_id
+    vector    : float[384]
+    distance  : COSINE
+    payload   : record identifiers
+    --
+    created lazily on first write
+  }
+}
+
+' ============================================ LOGICAL COLLECTIONS ==========
+package "Logical Memory Collections" #FFF8F0 {
+  entity "detections" as C_DET <<collection>> {
+    written by DetectionAgent
+    holds DetectionResult records
+  }
+  entity "analysis" as C_ANA <<collection>> {
+    written by AnalysisAgent
+    holds AnalysisResult records
+  }
+  entity "decisions" as C_DEC <<collection>> {
+    written by DecisionAgent
+    holds DecisionResult records
+  }
+  entity "responses" as C_RES <<collection>> {
+    written by ResponseAgent
+    holds ResponseResult records
+  }
+  entity "approvals" as C_APP <<collection>> {
+    written by ApprovalStore
+    holds ApprovalDecision records
+  }
+  entity "feedback" as C_FBK <<collection>> {
+    written by FeedbackService
+    holds AnalystFeedback records
+  }
+  entity "learning_reports" as C_LRN <<collection>> {
+    written by LearningAgent
+    holds LearningReport records
+  }
+  entity "threat_history" as C_THR <<collection>> {
+    <i>read-only / reserved</i>
+    searched by DecisionAgent
+    no writer implemented
+  }
+}
+
+' ==================================================== RELATIONSHIPS ========
+
+' -- Writers depend on the port, never on an implementation --
+' (a single representative edge; the same dependency holds for every writer —
+'  see note N_PORT below)
+DetectionAgent -down-> MemoryProvider : <<uses>>
+
+' -- Port composition --
+MemoryProvider ..> MemoryRecord       : stores / returns
+MemoryProvider ..> MemoryQuery        : accepts
+MemoryProvider ..> MemorySearchResult : returns
+MemorySearchResult *-- "1" MemoryRecord
+
+' -- Adapters realise the port --
+InMemoryMemoryProvider     -up-|> MemoryProvider
+QdrantSqliteMemoryProvider -up-|> MemoryProvider
+
+' -- Adapters to physical storage --
+QdrantSqliteMemoryProvider -down-> SQLTable    : exact-match filters,\nfull record persistence
+QdrantSqliteMemoryProvider -down-> QdrantStore : semantic similarity search
+
+note right of InMemoryMemoryProvider
+  No physical storage. State lives in a
+  nested dict in process RAM and is lost
+  on restart — acceptable for tests,
+  never used for the running platform.
+end note
+
+' -- Collection routing (write path) --
+DetectionAgent  -down-> C_DET : store()
+AnalysisAgent   -down-> C_ANA : store()
+DecisionAgent   -down-> C_DEC : store()
+ResponseAgent   -down-> C_RES : store()
+ApprovalStore   -down-> C_APP : store()
+FeedbackService -down-> C_FBK : store()
+LearningAgent   -down-> C_LRN : store()
+
+' -- Read path --
+DecisionAgent    .down.> C_THR : search()
+OutcomeCollector .down.> C_DET : search()\n(and analysis, decisions,\nresponses, approvals, feedback)
+
+' -- Every collection materialises as rows in the one physical table --
+C_DET -down-> SQLTable
+C_LRN -down-> SQLTable
+
+' ------------------------------------------------------------- NOTES ------
+note as N_PORT
+  **Dependency rule (all writers).**
+  Every component in Layer 1 depends only on the
+  MemoryProvider Protocol — DetectionAgent,
+  AnalysisAgent, DecisionAgent, ResponseAgent,
+  ApprovalStore, FeedbackService, LearningAgent
+  and OutcomeCollector. None imports a concrete
+  provider, so the storage engine is swappable
+  by constructor injection alone.
+end note
+
+note as N_TABLE
+  **All eight collections share one table.**
+  "collection" is a column, not a schema.
+  Only two edges are drawn here to keep the
+  figure readable; every collection persists
+  the same way.
+end note
+
+note as N_LIFECYCLE
+  **Record lifecycle (write path)**
+  1. Agent builds a MemoryRecord (Pydantic validation)
+  2. provider.store(collection, record)
+  3. SQLite: INSERT into memory_records (12 columns)
+  4. Content serialised to JSON, embedded to a
+     384-dim vector by all-MiniLM-L6-v2
+  5. Qdrant: upsert point (id = record_id, cosine)
+  Read path reverses this: SQLite for exact filters,
+  Qdrant when MemoryQuery.query_text is supplied.
+end note
+
+note as N_CORRELATION
+  **Cross-collection joins**
+  Collections are physically flat — there are no
+  foreign keys in SQLite. Incidents are reassembled
+  at read time by filtering every collection on the
+  shared correlation_id, which OutcomeCollector and
+  api/projections.py both rely on.
+end note
+
+note as N_RECALL
+  **Why two storage engines**
+  Exact recall ("all decisions for this correlation_id")
+  is a relational query and belongs in SQLite.
+  Similarity recall ("incidents resembling this one")
+  needs vector distance and belongs in Qdrant.
+  A single engine would do one of the two badly.
+end note
+
+note as N_ALERTS
+  **No "alerts" collection exists.**
+  Alerts are projected on read from the
+  detections and analysis collections by
+  api/projections.py, so an alert can never
+  drift out of sync with its detection.
+end note
+
+N_PORT        .. MemoryProvider
+N_TABLE       .. SQLTable
+N_LIFECYCLE   .. QdrantSqliteMemoryProvider
+N_CORRELATION .. SQLTable
+N_RECALL      .. QdrantStore
+N_ALERTS      .. C_DET
+
+@enduml

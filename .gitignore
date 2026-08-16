@@ -1,33 +1,64 @@
-### AL ###
-#Template for AL projects for Dynamics 365 Business Central
-#launch.json folder
+### Editors / OS ###
 .vscode/
-#Cache folder
-.alcache/
-#Symbols folder
-.alpackages/
-#Snapshots folder
-.snapshots/
-#Testing Output folder
-.output/
-#Extension App-file
-*.app
-#Rapid Application Development File
-rad.json
-#Translation Base-file
-*.g.xlf
-#License-files
-*.bclicense
-*.flf
-#Test results file
-TestResults.xml
-#ignore all files in the .vscode folder
 .vscode/*
+.DS_Store
+
+### Python ###
 .venv/*
+__pycache__/
 .pycache/*
 .pytest_cache/*
-.DS_Store
+*.py[cod]
+
+# NOTE: `__init__.py` was previously listed here. It ignored 15 real package
+# files -- memory/__init__.py, ingestion/__init__.py,
+# agents/coordinator/__init__.py and others, several containing actual code --
+# so a fresh clone could not import the platform at all. Never ignore it.
+
+### Secrets ###
 .env
+.env.local
+
+### Datasets ###
+# cicids2017_cleaned.csv is 717 MB. Keep the directory structure, not the data.
 data/*
-__pycache__/
-__init__.py
+!data/.gitkeep
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+### Model artifacts ###
+# Tracked deliberately: the platform refuses to start without them, and
+# artifacts/attack_profiles.json is required by the simulation endpoint.
+# Only intermediate training scratch is ignored.
+artifacts/*.tmp
+
+### Network capture artifacts ###
+# Sensitive: a record of who talked to whom. Never commit, even at snaplen 96.
+captures/
+# Staging for pcaps submitted by remote sensors. Same sensitivity, and it is
+# somebody else's network on top of that.
+uploads/
+*.pcap
+*.pcapng
+*.cap
+
+### Derived / runtime data ###
+# Outputs of a local run, not source. predictions.csv and out.csv are derived
+# from a capture and inherit its sensitivity.
+out.csv
+predictions.csv
+memory_metadata.db
+memory_metadata.db-journal
+qdrant_db/
+results/*.csv
+
+### Vendored dependency ###
+# cicflowmeter/ is vendored as tracked files -- see cicflowmeter/VENDOR.md.
+# Its pre-vendoring nested git history is kept locally but never committed.
+cicflowmeter/.git-upstream/
+
+### Build output ###
+frontend/node_modules/
+frontend/dist/
+*.app
+TestResults.xml

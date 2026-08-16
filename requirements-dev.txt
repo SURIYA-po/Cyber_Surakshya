@@ -1,0 +1,27 @@
+# Development and test dependencies.
+#   pip install -r requirements.txt -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=7.0.0
+
+# In-process Redis with full Streams and consumer-group support. The stream
+# tests run against this rather than a live server: a durability test that
+# needs infrastructure is a test that gets skipped, and "lose nothing / replay
+# nothing" is exactly the guarantee nobody notices is broken until production.
+fakeredis>=2.20.0
+
+# scapy moved to requirements.txt: the vendored cicflowmeter package is used by
+# the live ingestion path at runtime, not only by tests.
+
+# Bug-catching lint. Config in pyproject.toml, deliberately narrow: pyflakes
+# (undefined names, unused imports), bugbear, pyupgrade, import order. It
+# would have caught the two missing imports that reached runtime during the
+# app.py router split.
+#   python -m ruff check .
+ruff>=0.6
+
+# python-docx: builds docs/Work_Details_Section.docx from the report Markdown
+# via docs/tools/md_to_docx.py. Documentation tooling only -- not needed to run
+# the platform.
+python-docx>=1.1.0

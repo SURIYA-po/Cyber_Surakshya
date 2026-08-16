@@ -1,18 +1,25 @@
-import { LayoutDashboard, ShieldAlert, Server, Ban, PlayCircle, Settings, X, Shield, Activity } from "lucide-react";
+import {
+  LayoutDashboard, ShieldAlert, Server, Ban, PlayCircle, Settings, X, Shield,
+  Database, Radio, ShieldCheck, Brain,
+} from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 const menu = [
   { label:"Overview",  items:[
-    { name:"Dashboard",   icon:LayoutDashboard, path:"/" },
-    { name:"Simulation",  icon:PlayCircle,       path:"/simulation" },
+    { name:"Dashboard",    icon:LayoutDashboard, path:"/" },
+    { name:"Live Capture", icon:Radio,           path:"/live" },
+    { name:"Simulation",   icon:PlayCircle,      path:"/simulation" },
   ]},
   { label:"Security", items:[
-    { name:"Alerts",      icon:ShieldAlert,     path:"/alerts" },
-    { name:"Blocked IPs", icon:Ban,             path:"/blocked" },
+    { name:"Alerts",       icon:ShieldAlert,     path:"/alerts" },
+    { name:"Response",     icon:ShieldCheck,     path:"/response" },
+    { name:"Blocked IPs",  icon:Ban,             path:"/blocked" },
   ]},
   { label:"System", items:[
-    { name:"Agents",      icon:Server,          path:"/agents" },
-    { name:"Settings",    icon:Settings,        path:"/settings" },
+    { name:"Agents",       icon:Server,          path:"/agents" },
+    { name:"Learning",     icon:Brain,           path:"/learning" },
+    { name:"Memory",       icon:Database,        path:"/memory" },
+    { name:"Settings",     icon:Settings,        path:"/settings" },
   ]},
 ];
 

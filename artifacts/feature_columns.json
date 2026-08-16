@@ -24,7 +24,7 @@
   "Total Length of Fwd Packets",
   "Subflow Fwd Bytes",
   "Fwd Header Length",
-  "pyDestination Port",
+  "Destination Port",
   "Fwd Packet Length Mean",
   "Bwd Header Length",
   "Fwd Packet Length Std",

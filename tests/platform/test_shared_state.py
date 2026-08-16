@@ -1,15 +1,14 @@
 """Tests for LangGraph shared state models."""
 
+from cyber_surakshya.platform.state import (
+    PlatformStateModel,
+    create_initial_state,
+)
 from tests.platform.conftest import (
     sample_alert,
     sample_analysis_result,
     sample_detection_result,
     sample_security_event,
-)
-
-from cyber_surakshya.platform.state import (
-    PlatformStateModel,
-    create_initial_state,
 )
 
 
